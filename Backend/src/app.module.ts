@@ -14,6 +14,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nestjs/throttler-storage-redis';
 import { LoggingModule } from './logging/logging.module';
 import { ErrorHandlingModule } from './common/error-handling.module';
+import { BackupModule } from './backup/backup.module';
 
 @Module({
   imports: [
@@ -48,6 +49,8 @@ import { ErrorHandlingModule } from './common/error-handling.module';
     NotificationModule,
     AuthModule,
     WebsocketModule,
+    // Backup and disaster recovery module
+    BackupModule,
   ],
   controllers: [AppController, UserController],
   providers: [AppService],

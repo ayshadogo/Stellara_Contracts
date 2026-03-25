@@ -31,7 +31,13 @@
     "db:seed": "ts-node prisma/seed.ts",
     "db:pre-deploy": "ts-node prisma/scripts/pre-deploy-check.ts",
     "db:studio": "prisma studio",
-    "prepare": "cd .. && husky install backend/.husky"
+    "prepare": "cd .. && husky install backend/.husky",
+    "backup:trigger": "ts-node scripts/trigger-backup.ts",
+    "backup:verify": "ts-node scripts/verify-backup.ts",
+    "backup:restore": "ts-node scripts/restore.ts",
+    "backup:status": "ts-node scripts/backup-status.ts",
+    "backup:cleanup": "ts-node scripts/cleanup-backups.ts",
+    "dr:drill": "ts-node scripts/dr-drill.ts"
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.1016.0",
