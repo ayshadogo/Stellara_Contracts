@@ -2,6 +2,7 @@ import { Module, Global } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-ioredis-yet';
+import { DistributedLockService } from './distributed-lock.service';
 import { RedisService } from './redis.service';
 
 @Global()
@@ -21,7 +22,7 @@ import { RedisService } from './redis.service';
       isGlobal: true,
     }),
   ],
-  providers: [RedisService],
-  exports: [CacheModule, RedisService],
+  providers: [RedisService, DistributedLockService],
+  exports: [CacheModule, RedisService, DistributedLockService],
 })
 export class RedisModule {}

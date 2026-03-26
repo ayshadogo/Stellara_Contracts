@@ -209,6 +209,38 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   DR_TEST_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  DEPLOYMENT_ENVIRONMENT?: string;
+
+  @IsOptional()
+  @IsString()
+  DEPLOYMENT_SLOT?: string;
+
+  @IsOptional()
+  @IsString()
+  RELEASE_VERSION?: string;
+
+  @IsOptional()
+  @IsString()
+  RELEASE_COMMIT_SHA?: string;
+
+  @IsOptional()
+  @IsString()
+  RELEASE_BUILD_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  ACTIVE_COLOR?: string;
+
+  @IsOptional()
+  @IsString()
+  TRAFFIC_STATUS?: string;
+
+  @IsOptional()
+  @IsNumber()
+  WEBHOOK_REQUEST_TIMEOUT_MS?: number;
 }
 
 export function validateEnv(config: Record<string, unknown>) {
