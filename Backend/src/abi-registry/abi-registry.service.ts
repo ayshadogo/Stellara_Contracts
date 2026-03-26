@@ -407,7 +407,11 @@ export class AbiRegistryService {
 
   private deriveEventName(topics?: string[], data?: unknown): string {
     if (topics?.length) {
-      return topics[0];
+      try {
+        return Buffer.from(topics[0], 'base64').toString('utf8') || topics[0];
+      } catch {
+        return topics[0];
+      }
     }
 
     const payload = this.normalizePayload(data);
