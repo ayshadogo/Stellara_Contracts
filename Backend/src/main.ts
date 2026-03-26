@@ -80,6 +80,10 @@ async function bootstrap() {
   logger.log(`Application is running on: http://localhost:${port}/${apiPrefix}`, 'Bootstrap');
   logger.log(`Environment: ${configService.get<string>('NODE_ENV', 'development')}`, 'Bootstrap');
   logger.log(`Log level: ${configService.get<string>('LOG_LEVEL', 'info')}`, 'Bootstrap');
+  logger.log(
+    `Deployment slot: ${configService.get<string>('DEPLOYMENT_SLOT', 'standalone')} release=${configService.get<string>('RELEASE_VERSION', 'local')}`,
+    'Bootstrap',
+  );
 
   let shuttingDown = false;
   const shutdown = async (signal: string) => {

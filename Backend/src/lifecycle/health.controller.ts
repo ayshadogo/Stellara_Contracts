@@ -16,6 +16,11 @@ export class HealthController {
     return this.appState.getHealthSnapshot();
   }
 
+  @Get('health/deployment')
+  getDeploymentHealth(): any {
+    return this.appState.getHealthSnapshot().deployment;
+  }
+
   @Get('health/live')
   getLiveness(): any {
     return this.appState.getLivenessSnapshot();

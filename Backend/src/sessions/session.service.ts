@@ -7,6 +7,7 @@ import { Request } from 'express';
 import { randomUUID, createHash } from 'node:crypto';
 import { UAParser } from 'ua-parser-js';
 import * as bcrypt from 'bcrypt';
+import { distributedlock } from '../redis/distributed-lock.decorator';
 import { RedisService } from '../redis/redis.service';
 import { parseDurationToSeconds } from '../common/utils/duration.util';
 
@@ -48,6 +49,7 @@ export class SessionService {
     return randomUUID();
   }
 
+  @distributedlock({ key: 'user:{id}' })
   async createSession(
     user: {
       id: string;
@@ -99,6 +101,7 @@ export class SessionService {
     return session;
   }
 
+  @distributedlock({ key: 'user:{id}' })
   async validateRefreshSession(
     userId: string,
     sessionId: string,
@@ -117,6 +120,7 @@ export class SessionService {
     return session;
   }
 
+  @distributedlock({ key: 'user:{id}' })
   async rotateRefreshToken(
     userId: string,
     sessionId: string,
@@ -187,6 +191,7 @@ export class SessionService {
     return sessions;
   }
 
+  @distributedlock({ key: 'user:{id}' })
   async terminateSession(
     userId: string,
     sessionId: string,
@@ -197,6 +202,7 @@ export class SessionService {
     await this.logActivity(sessionId, 'session_terminated', { reason });
   }
 
+  @distributedlock({ key: 'user:{id}' })
   async terminateOtherSessions(
     userId: string,
     currentSessionId: string,

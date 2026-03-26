@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { label: "Community", href: "#community" },
   { label: "Trade", href: "#trade" },
   { label: "News", href: "#news" },
+  { label: "ABI Admin", href: "/admin/abis" },
 ] as const;
 
 export default function Navbar() {
