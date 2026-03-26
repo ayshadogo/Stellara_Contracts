@@ -8,6 +8,9 @@ use soroban_sdk::{
 const CONTRACT_VERSION: u32 = 1;
 const MAX_MESSAGE_LENGTH: u32 = 1024;
 
+const RL_CFG: Symbol = symbol_short!("rl_cfg");
+const PREM: Symbol = symbol_short!("prem");
+
 #[contract]
 pub struct UpgradeableMessagingContract;
 
@@ -30,6 +33,15 @@ pub struct MessagingStats {
     pub last_message_id: u64,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RateLimitConfig {
+    pub window_secs: u64,
+    pub user_limit: u32,
+    pub global_limit: u32,
+    pub premium_user_limit: u32,
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum MessagingError {
@@ -39,6 +51,9 @@ pub enum MessagingError {
     MessageNotFound = 4004,
     AlreadyRead = 4005,
     NotInitialized = 4006,
+    RateLimitExceeded = 4007,
+    GlobalRateLimitExceeded = 4008,
+    InvalidRateLimitConfig = 4009,
 }
 
 impl From<MessagingError> for soroban_sdk::Error {
@@ -116,6 +131,85 @@ fn get_stats(env: &Env) -> MessagingStats {
         })
 }
 
+fn read_rate_limit_config(env: &Env) -> RateLimitConfig {
+    env.storage()
+        .persistent()
+        .get(&RL_CFG)
+        .unwrap_or(RateLimitConfig {
+            window_secs: 60,
+            user_limit: 5,
+            global_limit: 100,
+            premium_user_limit: 20,
+        })
+}
+
+fn is_premium_user(env: &Env, user: &Address) -> bool {
+    let premium_users: Map<Address, bool> = env
+        .storage()
+        .persistent()
+        .get(&PREM)
+        .unwrap_or_else(|| Map::new(env));
+
+    premium_users.get(user.clone()).unwrap_or(false)
+}
+
+fn get_user_window_usage(env: &Env, user: &Address, window: u64) -> u32 {
+    let key = (symbol_short!("rlu"), user.clone(), window);
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+fn set_user_window_usage(env: &Env, user: &Address, window: u64, count: u32) {
+    let key = (symbol_short!("rlu"), user.clone(), window);
+    env.storage().persistent().set(&key, &count);
+}
+
+fn get_global_window_usage(env: &Env, window: u64) -> u32 {
+    let key = (symbol_short!("rlg"), window);
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+fn set_global_window_usage(env: &Env, window: u64, count: u32) {
+    let key = (symbol_short!("rlg"), window);
+    env.storage().persistent().set(&key, &count);
+}
+
+fn check_and_consume_message_rate_limit(env: &Env, sender: &Address) -> Result<(), MessagingError> {
+    let cfg = read_rate_limit_config(env);
+
+    if cfg.window_secs == 0
+        || cfg.user_limit == 0
+        || cfg.global_limit == 0
+        || cfg.premium_user_limit == 0
+    {
+        return Err(MessagingError::InvalidRateLimitConfig);
+    }
+
+    let now = env.ledger().timestamp();
+    let window = now / cfg.window_secs;
+
+    let current_user = get_user_window_usage(env, sender, window);
+    let current_global = get_global_window_usage(env, window);
+
+    let allowed_user_limit = if is_premium_user(env, sender) {
+        cfg.premium_user_limit
+    } else {
+        cfg.user_limit
+    };
+
+    if current_user >= allowed_user_limit {
+        return Err(MessagingError::RateLimitExceeded);
+    }
+
+    if current_global >= cfg.global_limit {
+        return Err(MessagingError::GlobalRateLimitExceeded);
+    }
+
+    set_user_window_usage(env, sender, window, current_user.saturating_add(1));
+    set_global_window_usage(env, window, current_global.saturating_add(1));
+
+    Ok(())
+}
+
 #[contractimpl]
 impl UpgradeableMessagingContract {
     pub fn init(
@@ -150,6 +244,19 @@ impl UpgradeableMessagingContract {
                 last_message_id: 0,
             },
         );
+
+        let default_rate_limit = RateLimitConfig {
+            window_secs: 60,
+            user_limit: 5,
+            global_limit: 100,
+            premium_user_limit: 20,
+        };
+
+        let premium_users = Map::<Address, bool>::new(&env);
+
+        env.storage().persistent().set(&RL_CFG, &default_rate_limit);
+        env.storage().persistent().set(&PREM, &premium_users);
+
         env.storage()
             .persistent()
             .set(&symbol_short!("ver"), &CONTRACT_VERSION);
@@ -165,6 +272,7 @@ impl UpgradeableMessagingContract {
     ) -> Result<u64, MessagingError> {
         sender.require_auth();
         require_initialized(&env)?;
+        check_and_consume_message_rate_limit(&env, &sender)?;
 
         if sender == recipient {
             return Err(MessagingError::InvalidRecipient);
@@ -321,6 +429,78 @@ impl UpgradeableMessagingContract {
             .persistent()
             .get(&symbol_short!("ver"))
             .unwrap_or(0)
+    }
+
+    pub fn set_rate_limit_config(
+        env: Env,
+        admin: Address,
+        window_secs: u64,
+        user_limit: u32,
+        global_limit: u32,
+        premium_user_limit: u32,
+    ) -> Result<(), MessagingError> {
+        admin.require_auth();
+        require_initialized(&env)?;
+        Self::require_admin_role(&env, &admin)?;
+
+        if window_secs == 0 || user_limit == 0 || global_limit == 0 || premium_user_limit == 0 {
+            return Err(MessagingError::InvalidRateLimitConfig);
+        }
+
+        let cfg = RateLimitConfig {
+            window_secs,
+            user_limit,
+            global_limit,
+            premium_user_limit,
+        };
+
+        env.storage().persistent().set(&RL_CFG, &cfg);
+        Ok(())
+    }
+
+    pub fn set_premium_user(
+        env: Env,
+        admin: Address,
+        user: Address,
+        is_premium: bool,
+    ) -> Result<(), MessagingError> {
+        admin.require_auth();
+        require_initialized(&env)?;
+        Self::require_admin_role(&env, &admin)?;
+
+        let mut premium_users: Map<Address, bool> = env
+            .storage()
+            .persistent()
+            .get(&PREM)
+            .unwrap_or_else(|| Map::new(&env));
+
+        premium_users.set(user, is_premium);
+        env.storage().persistent().set(&PREM, &premium_users);
+
+        Ok(())
+    }
+
+    pub fn get_rate_limit_config(env: Env) -> Result<RateLimitConfig, MessagingError> {
+        require_initialized(&env)?;
+        Ok(read_rate_limit_config(&env))
+    }
+
+    fn require_admin_role(env: &Env, admin: &Address) -> Result<(), MessagingError> {
+        let roles: Map<Address, GovernanceRole> = env
+            .storage()
+            .persistent()
+            .get(&symbol_short!("roles"))
+            .ok_or(MessagingError::Unauthorized)?;
+
+        let role = roles
+            .get(admin.clone())
+            .ok_or(MessagingError::Unauthorized)?;
+
+        if role != GovernanceRole::Admin {
+            return Err(MessagingError::Unauthorized);
+        }
+
+        Ok(())
     }
 
     pub fn propose_upgrade(

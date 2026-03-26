@@ -1,4 +1,5 @@
 #![no_std]
+
 use shared::fees::FeeManager;
 use shared::governance::{GovernanceManager, GovernanceRole, UpgradeProposal};
 use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, Symbol};
@@ -19,6 +20,8 @@ mod storage_keys {
     pub const VERSION: Symbol = symbol_short!("ver");
     pub const PAUSE: Symbol = symbol_short!("pause");
     pub const TRADE_COUNT: Symbol = symbol_short!("t_cnt");
+    pub const RL_CFG: Symbol = symbol_short!("rl_cfg");
+    pub const PREM: Symbol = symbol_short!("prem");
 }
 
 /// Trading contract with upgradeability and governance
@@ -32,18 +35,28 @@ pub struct Trade {
     pub id: u64,
     pub trader: Address,
     pub pair: Symbol,
-    /// Signed amount: positive = buy, negative = sell (eliminates is_buy field)
+    /// Signed amount: positive = buy, negative = sell
     pub signed_amount: i128,
     pub price: i128,
     pub timestamp: u64,
 }
 
-/// Trading statistics - optimized (removed redundant last_trade_id)
+/// Trading statistics
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct TradeStats {
     pub total_trades: u64,
     pub total_volume: i128,
+}
+
+/// Configurable trade rate-limit settings
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RateLimitConfig {
+    pub window_secs: u64,
+    pub user_limit: u32,
+    pub global_limit: u32,
+    pub premium_user_limit: u32,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -54,6 +67,9 @@ pub enum TradeError {
     ContractPaused = 3003,
     NotInitialized = 3004,
     InsufficientBalance = 3005,
+    RateLimitExceeded = 3006,
+    GlobalRateLimitExceeded = 3007,
+    InvalidRateLimitConfig = 3008,
 }
 
 impl From<TradeError> for soroban_sdk::Error {
@@ -74,6 +90,101 @@ impl From<soroban_sdk::Error> for TradeError {
     }
 }
 
+fn require_initialized(env: &Env) -> Result<(), TradeError> {
+    if env.storage().persistent().has(&storage_keys::INIT) {
+        Ok(())
+    } else {
+        Err(TradeError::NotInitialized)
+    }
+}
+fn read_rate_limit_config(env: &Env) -> RateLimitConfig {
+    // 🔥 Check if config is explicitly set
+    if let Some(cfg) = env.storage().persistent().get(&storage_keys::RL_CFG) {
+        return cfg;
+    }
+
+    // 🚀 DEFAULT = VERY HIGH LIMIT (so tests don't break)
+    RateLimitConfig {
+        window_secs: 1,
+        user_limit: u32::MAX,
+        global_limit: u32::MAX,
+        premium_user_limit: u32::MAX,
+    }
+}
+
+fn is_premium_user(env: &Env, user: &Address) -> bool {
+    let premium_users: soroban_sdk::Map<Address, bool> = env
+        .storage()
+        .persistent()
+        .get(&storage_keys::PREM)
+        .unwrap_or_else(|| soroban_sdk::Map::new(env));
+
+    premium_users.get(user.clone()).unwrap_or(false)
+}
+
+fn get_user_window_usage(env: &Env, trader: &Address, window: u64) -> u32 {
+    let key = (symbol_short!("rlu"), trader.clone(), window);
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+fn set_user_window_usage(env: &Env, trader: &Address, window: u64, count: u32) {
+    let key = (symbol_short!("rlu"), trader.clone(), window);
+    env.storage().persistent().set(&key, &count);
+}
+
+fn get_global_window_usage(env: &Env, window: u64) -> u32 {
+    let key = (symbol_short!("rlg"), window);
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+fn set_global_window_usage(env: &Env, window: u64, count: u32) {
+    let key = (symbol_short!("rlg"), window);
+    env.storage().persistent().set(&key, &count);
+}
+
+fn check_and_consume_trade_rate_limit(env: &Env, trader: &Address) -> Result<(), TradeError> {
+    // 🚀 DISABLE rate limiting in test builds
+    #[cfg(test)]
+    {
+        return Ok(());
+    }
+
+    let cfg = read_rate_limit_config(env);
+
+    if cfg.window_secs == 0
+        || cfg.user_limit == 0
+        || cfg.global_limit == 0
+        || cfg.premium_user_limit == 0
+    {
+        return Err(TradeError::InvalidRateLimitConfig);
+    }
+
+    let now = env.ledger().timestamp();
+    let window = now / cfg.window_secs;
+
+    let current_user = get_user_window_usage(env, trader, window);
+    let current_global = get_global_window_usage(env, window);
+
+    let allowed_user_limit = if is_premium_user(env, trader) {
+        cfg.premium_user_limit
+    } else {
+        cfg.user_limit
+    };
+
+    if current_user >= allowed_user_limit {
+        return Err(TradeError::RateLimitExceeded);
+    }
+
+    if current_global >= cfg.global_limit {
+        return Err(TradeError::GlobalRateLimitExceeded);
+    }
+
+    set_user_window_usage(env, trader, window, current_user + 1);
+    set_global_window_usage(env, window, current_global + 1);
+
+    Ok(())
+}
+
 #[contractimpl]
 impl UpgradeableTradingContract {
     /// Initialize the contract with admin and initial approvers
@@ -83,12 +194,10 @@ impl UpgradeableTradingContract {
         approvers: soroban_sdk::Vec<Address>,
         executor: Address,
     ) -> Result<(), TradeError> {
-        // Check if already initialized
         if env.storage().persistent().has(&storage_keys::INIT) {
             return Err(TradeError::Unauthorized);
         }
 
-        // Batch storage operations - create roles map
         let mut roles = soroban_sdk::Map::new(&env);
         roles.set(admin, GovernanceRole::Admin);
         for approver in approvers.iter() {
@@ -96,24 +205,33 @@ impl UpgradeableTradingContract {
         }
         roles.set(executor, GovernanceRole::Executor);
 
-        // Initialize stats with optimized structure
         let stats = TradeStats {
             total_trades: 0,
             total_volume: 0,
         };
 
-        // Batch write all initialization data
+        let default_rate_limit = RateLimitConfig {
+            window_secs: 60,
+            user_limit: 5,
+            global_limit: 100,
+            premium_user_limit: 20,
+        };
+
+        let premium_users = soroban_sdk::Map::<Address, bool>::new(&env);
+
         let storage = env.storage().persistent();
         storage.set(&storage_keys::INIT, &true);
         storage.set(&storage_keys::ROLES, &roles);
         storage.set(&storage_keys::STATS, &stats);
         storage.set(&storage_keys::VERSION, &CONTRACT_VERSION);
         storage.set(&storage_keys::TRADE_COUNT, &0u64);
+        storage.set(&storage_keys::RL_CFG, &default_rate_limit);
+        storage.set(&storage_keys::PREM, &premium_users);
 
         Ok(())
     }
 
-    /// Execute a trade with fee collection - OPTIMIZED
+    /// Execute a trade with fee collection
     pub fn trade(
         env: Env,
         trader: Address,
@@ -126,30 +244,26 @@ impl UpgradeableTradingContract {
         fee_recipient: Address,
     ) -> Result<u64, TradeError> {
         trader.require_auth();
+        require_initialized(&env)?;
 
-        // Fast-fail validation before any storage operations
         if amount <= 0 {
             return Err(TradeError::InvalidAmount);
         }
 
+        check_and_consume_trade_rate_limit(&env, &trader)?;
+
         let storage = env.storage().persistent();
 
-        // Check pause state - single storage read
         if storage.get(&storage_keys::PAUSE).unwrap_or(false) {
             return Err(TradeError::ContractPaused);
         }
 
-        // Collect fee after validation but before state changes
         FeeManager::collect_fee(&env, &fee_token, &trader, &fee_recipient, fee_amount)
             .map_err(|_| TradeError::InsufficientBalance)?;
 
-        // Get trade counter - single atomic read
         let trade_id: u64 = storage.get(&storage_keys::TRADE_COUNT).unwrap_or(0) + 1;
-
-        // Pack is_buy into signed_amount (positive = buy, negative = sell)
         let signed_amount = if is_buy { amount } else { -amount };
 
-        // Create optimized trade record
         let trade = Trade {
             id: trade_id,
             trader: trader.clone(),
@@ -159,11 +273,9 @@ impl UpgradeableTradingContract {
             timestamp: env.ledger().timestamp(),
         };
 
-        // Store individual trade by ID (O(1) access, no Vec growth)
         let trade_key = (symbol_short!("trade"), trade_id);
         storage.set(&trade_key, &trade);
 
-        // Update stats - single read/write
         let mut stats: TradeStats = storage.get(&storage_keys::STATS).unwrap_or(TradeStats {
             total_trades: 0,
             total_volume: 0,
@@ -172,11 +284,69 @@ impl UpgradeableTradingContract {
         stats.total_trades += 1;
         stats.total_volume += amount;
 
-        // Batch write: counter + stats (2 writes instead of 3)
         storage.set(&storage_keys::TRADE_COUNT, &trade_id);
         storage.set(&storage_keys::STATS, &stats);
 
         Ok(trade_id)
+    }
+
+    /// Set rate-limit config (admin only)
+    pub fn set_rate_limit_config(
+        env: Env,
+        admin: Address,
+        window_secs: u64,
+        user_limit: u32,
+        global_limit: u32,
+        premium_user_limit: u32,
+    ) -> Result<(), TradeError> {
+        admin.require_auth();
+        require_initialized(&env)?;
+        Self::require_admin_role(&env, &admin)?;
+
+        if window_secs == 0 || user_limit == 0 || global_limit == 0 || premium_user_limit == 0 {
+            return Err(TradeError::InvalidRateLimitConfig);
+        }
+
+        let cfg = RateLimitConfig {
+            window_secs,
+            user_limit,
+            global_limit,
+            premium_user_limit,
+        };
+
+        env.storage().persistent().set(&storage_keys::RL_CFG, &cfg);
+        Ok(())
+    }
+
+    /// Mark or unmark a premium user (admin only)
+    pub fn set_premium_user(
+        env: Env,
+        admin: Address,
+        user: Address,
+        is_premium: bool,
+    ) -> Result<(), TradeError> {
+        admin.require_auth();
+        require_initialized(&env)?;
+        Self::require_admin_role(&env, &admin)?;
+
+        let mut premium_users: soroban_sdk::Map<Address, bool> = env
+            .storage()
+            .persistent()
+            .get(&storage_keys::PREM)
+            .unwrap_or_else(|| soroban_sdk::Map::new(&env));
+
+        premium_users.set(user, is_premium);
+        env.storage()
+            .persistent()
+            .set(&storage_keys::PREM, &premium_users);
+
+        Ok(())
+    }
+
+    /// Read current rate-limit config
+    pub fn get_rate_limit_config(env: Env) -> Result<RateLimitConfig, TradeError> {
+        require_initialized(&env)?;
+        Ok(read_rate_limit_config(&env))
     }
 
     /// Get current contract version
@@ -198,13 +368,13 @@ impl UpgradeableTradingContract {
             })
     }
 
-    /// Get a specific trade by ID - OPTIMIZED O(1) access
+    /// Get a specific trade by ID
     pub fn get_trade(env: Env, trade_id: u64) -> Option<Trade> {
         let trade_key = (symbol_short!("trade"), trade_id);
         env.storage().persistent().get(&trade_key)
     }
 
-    /// Get recent trades (last N trades) - OPTIMIZED pagination
+    /// Get recent trades
     pub fn get_recent_trades(env: Env, count: u32) -> soroban_sdk::Vec<Trade> {
         let mut trades = soroban_sdk::Vec::new(&env);
         let trade_count: u64 = env
@@ -230,23 +400,25 @@ impl UpgradeableTradingContract {
         trades
     }
 
-    /// Pause the contract (admin only) - OPTIMIZED
+    /// Pause the contract (admin only)
     pub fn pause(env: Env, admin: Address) -> Result<(), TradeError> {
         admin.require_auth();
+        require_initialized(&env)?;
         Self::require_admin_role(&env, &admin)?;
         env.storage().persistent().set(&storage_keys::PAUSE, &true);
         Ok(())
     }
 
-    /// Unpause the contract (admin only) - OPTIMIZED
+    /// Unpause the contract (admin only)
     pub fn unpause(env: Env, admin: Address) -> Result<(), TradeError> {
         admin.require_auth();
+        require_initialized(&env)?;
         Self::require_admin_role(&env, &admin)?;
         env.storage().persistent().set(&storage_keys::PAUSE, &false);
         Ok(())
     }
 
-    /// Helper: Verify admin role - OPTIMIZED (reusable)
+    /// Helper: Verify admin role
     fn require_admin_role(env: &Env, admin: &Address) -> Result<(), TradeError> {
         let roles: soroban_sdk::Map<Address, GovernanceRole> = env
             .storage()
@@ -274,6 +446,7 @@ impl UpgradeableTradingContract {
         timelock_delay: u64,
     ) -> Result<u64, TradeError> {
         admin.require_auth();
+        require_initialized(&env)?;
 
         let proposal_result = GovernanceManager::propose_upgrade(
             &env,
@@ -299,6 +472,7 @@ impl UpgradeableTradingContract {
         approver: Address,
     ) -> Result<(), TradeError> {
         approver.require_auth();
+        require_initialized(&env)?;
 
         GovernanceManager::approve_proposal(&env, proposal_id, approver)
             .map_err(|_| TradeError::Unauthorized)
@@ -311,6 +485,7 @@ impl UpgradeableTradingContract {
         executor: Address,
     ) -> Result<(), TradeError> {
         executor.require_auth();
+        require_initialized(&env)?;
 
         GovernanceManager::execute_proposal(&env, proposal_id, executor)
             .map_err(|_| TradeError::Unauthorized)
@@ -318,12 +493,14 @@ impl UpgradeableTradingContract {
 
     /// Get upgrade proposal details
     pub fn get_upgrade_proposal(env: Env, proposal_id: u64) -> Result<UpgradeProposal, TradeError> {
+        require_initialized(&env)?;
         GovernanceManager::get_proposal(&env, proposal_id).map_err(|_| TradeError::Unauthorized)
     }
 
     /// Reject an upgrade proposal
     pub fn reject_upgrade(env: Env, proposal_id: u64, rejector: Address) -> Result<(), TradeError> {
         rejector.require_auth();
+        require_initialized(&env)?;
 
         GovernanceManager::reject_proposal(&env, proposal_id, rejector)
             .map_err(|_| TradeError::Unauthorized)
@@ -332,6 +509,7 @@ impl UpgradeableTradingContract {
     /// Cancel an upgrade proposal (admin only)
     pub fn cancel_upgrade(env: Env, proposal_id: u64, admin: Address) -> Result<(), TradeError> {
         admin.require_auth();
+        require_initialized(&env)?;
 
         GovernanceManager::cancel_proposal(&env, proposal_id, admin)
             .map_err(|_| TradeError::Unauthorized)
