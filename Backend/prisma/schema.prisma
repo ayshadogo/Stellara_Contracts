@@ -50,6 +50,8 @@ model User {
   tenantMembers       TenantMember[]
   experimentAssignments ExperimentAssignment[]
   verificationSessions VerificationSession[]
+  userLocations       UserLocation[]
+  marginAccount        MarginAccount?
 
   @@unique([tenantId, email])
   @@unique([tenantId, walletAddress])
@@ -57,6 +59,124 @@ model User {
   @@index([tenantId, email])
   @@index([tenantId, walletAddress])
   @@map("users")
+}
+
+model UserLocation {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress       String   @map("ip_address")
+  country         String?
+  region          String?
+  city            String?
+  latitude        Float?
+  longitude       Float?
+  isp             String?
+  isVpn           Boolean  @default(false) @map("is_vpn")
+  isTor           Boolean  @default(false) @map("is_tor")
+  isProxy         Boolean  @default(false) @map("is_proxy")
+  userAgent       String?  @map("user_agent")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([ipAddress])
+  @@map("user_locations")
+}
+
+model CollateralAsset {
+  id              String   @id @default(cuid())
+  symbol          String   @unique
+  name            String
+  haircut         Decimal  @db.Decimal(5, 4) // e.g., 0.10 for 10% haircut
+  isLiquidatable  Boolean  @default(true)
+  minPledgeAmount Decimal  @db.Decimal(18, 4)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  pledges         CollateralPledge[]
+
+  @@map("collateral_assets")
+}
+
+model MarginAccount {
+  id                String   @id @default(cuid())
+  userId            String   @unique @map("user_id")
+  user              User     @relation(fields: [userId], references: [id])
+  totalBorrowed     Decimal  @default(0) @db.Decimal(18, 4) @map("total_borrowed")
+  totalCollateralUsd Decimal  @default(0) @db.Decimal(18, 4) @map("total_collateral_usd")
+  ltvRatio          Decimal  @default(0) @db.Decimal(5, 4) @map("ltv_ratio") // current Loan-to-Value
+  healthFactor      Decimal  @default(1.0) @db.Decimal(5, 4) @map("health_factor")
+  lastMarginCallAt  DateTime? @map("last_margin_call_at")
+  status            MarginAccountStatus @default(HEALTHY)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  pledges           CollateralPledge[]
+  loans             Loan[]
+  liquidations      Liquidation[]
+
+  @@map("margin_accounts")
+}
+
+model CollateralPledge {
+  id                String   @id @default(cuid())
+  marginAccountId   String   @map("margin_account_id")
+  marginAccount     MarginAccount @relation(fields: [marginAccountId], references: [id])
+  assetSymbol       String   @map("asset_symbol")
+  asset             CollateralAsset @relation(fields: [assetSymbol], references: [symbol])
+  amount            Decimal  @db.Decimal(18, 4)
+  lockedAmount      Decimal  @default(0) @db.Decimal(18, 4) @map("locked_amount")
+  lastValuationUsd  Decimal? @db.Decimal(18, 4) @map("last_valuation_usd")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([marginAccountId, assetSymbol])
+  @@map("collateral_pledges")
+}
+
+model Loan {
+  id                String   @id @default(cuid())
+  marginAccountId   String   @map("margin_account_id")
+  marginAccount     MarginAccount @relation(fields: [marginAccountId], references: [id])
+  assetSymbol       String   @map("asset_symbol")
+  amount            Decimal  @db.Decimal(18, 4)
+  interestRate      Decimal  @db.Decimal(5, 4) @map("interest_rate")
+  accruedInterest   Decimal  @default(0) @db.Decimal(18, 4) @map("accrued_interest")
+  lastInterestAccrual DateTime @default(now()) @map("last_interest_accrual")
+  status            LoanStatus @default(ACTIVE)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("loans")
+}
+
+model Liquidation {
+  id                String   @id @default(cuid())
+  marginAccountId   String   @map("margin_account_id")
+  marginAccount     MarginAccount @relation(fields: [marginAccountId], references: [id])
+  liquidatorAddress String   @map("liquidator_address")
+  collateralSymbol  String   @map("collateral_symbol")
+  collateralAmount  Decimal  @db.Decimal(18, 4) @map("collateral_amount")
+  loanSymbol        String   @map("loan_symbol")
+  loanAmount        Decimal  @db.Decimal(18, 4) @map("loan_amount")
+  liquidationFee    Decimal  @db.Decimal(18, 4) @map("liquidation_fee")
+  timestamp         DateTime @default(now())
+
+  @@map("liquidations")
+}
+
+enum MarginAccountStatus {
+  HEALTHY
+  MARGIN_CALL
+  LIQUIDATION_PENDING
+  LIQUIDATED
+}
+
+enum LoanStatus {
+  ACTIVE
+  PAID
+  LIQUIDATED
 }
 
 model Project {
