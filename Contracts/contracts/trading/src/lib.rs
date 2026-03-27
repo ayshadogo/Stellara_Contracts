@@ -1,6 +1,9 @@
 #![no_std]
 
 use shared::acl::ACL;
+use shared::circuit_breaker::{
+    CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState, PauseLevel,
+};
 use shared::fees::FeeManager;
 use shared::governance::{GovernanceManager, GovernanceRole, UpgradeProposal};
 use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env, Symbol, Vec};
@@ -418,12 +421,49 @@ impl UpgradeableTradingContract {
         trades
     }
 
+    /// Set circuit breaker pause level (ACL protected)
+    pub fn set_pause_level(env: Env, admin: Address, level: PauseLevel) -> Result<(), TradeError> {
+        admin.require_auth();
+        require_initialized(&env)?;
+        ACL::require_permission(&env, &admin, &Symbol::new(&env, "pause"));
+        CircuitBreaker::set_pause_level(&env, admin, level);
+        Ok(())
+    }
+
+    /// Pause specific function (ACL protected)
+    pub fn pause_function(env: Env, admin: Address, func_name: Symbol) -> Result<(), TradeError> {
+        admin.require_auth();
+        require_initialized(&env)?;
+        ACL::require_permission(&env, &admin, &Symbol::new(&env, "pause"));
+        CircuitBreaker::pause_function(&env, admin, func_name);
+        Ok(())
+    }
+
+    /// Unpause specific function (ACL protected)
+    pub fn unpause_function(env: Env, admin: Address, func_name: Symbol) -> Result<(), TradeError> {
+        admin.require_auth();
+        require_initialized(&env)?;
+        ACL::require_permission(&env, &admin, &Symbol::new(&env, "unpause"));
+        CircuitBreaker::unpause_function(&env, admin, func_name);
+        Ok(())
+    }
+
+    /// Get current circuit breaker state
+    pub fn get_cb_state(env: Env) -> CircuitBreakerState {
+        CircuitBreaker::get_state(&env)
+    }
+
+    /// Get current circuit breaker config
+    pub fn get_cb_config(env: Env) -> CircuitBreakerConfig {
+        CircuitBreaker::get_config(&env)
+    }
+
     /// Pause the contract (ACL protected)
     pub fn pause(env: Env, admin: Address) -> Result<(), TradeError> {
         admin.require_auth();
         require_initialized(&env)?;
         ACL::require_permission(&env, &admin, &Symbol::new(&env, "pause"));
-        env.storage().persistent().set(&storage_keys::PAUSE, &true);
+        CircuitBreaker::set_pause_level(&env, admin, PauseLevel::Full);
         Ok(())
     }
 
@@ -432,7 +472,7 @@ impl UpgradeableTradingContract {
         admin.require_auth();
         require_initialized(&env)?;
         ACL::require_permission(&env, &admin, &Symbol::new(&env, "unpause"));
-        env.storage().persistent().set(&storage_keys::PAUSE, &false);
+        CircuitBreaker::set_pause_level(&env, admin, PauseLevel::None);
         Ok(())
     }
 

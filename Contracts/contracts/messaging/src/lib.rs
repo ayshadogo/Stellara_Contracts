@@ -1,6 +1,9 @@
 #![no_std]
 
 use shared::acl::ACL;
+use shared::circuit_breaker::{
+    CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState, PauseLevel,
+};
 use shared::governance::{GovernanceManager, GovernanceRole, UpgradeProposal};
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec,
@@ -435,6 +438,47 @@ impl UpgradeableMessagingContract {
         require_initialized(&env)?;
         let unread_counts = get_unread_counts(&env);
         Ok(unread_counts.get(user).unwrap_or(0))
+    }
+
+    pub fn set_cb_pause_level(
+        env: Env,
+        admin: Address,
+        level: PauseLevel,
+    ) -> Result<(), MessagingError> {
+        admin.require_auth();
+        ACL::require_permission(&env, &admin, &Symbol::new(&env, "pause"));
+        CircuitBreaker::set_pause_level(&env, admin, level);
+        Ok(())
+    }
+
+    pub fn pause_cb_function(
+        env: Env,
+        admin: Address,
+        func_name: Symbol,
+    ) -> Result<(), MessagingError> {
+        admin.require_auth();
+        ACL::require_permission(&env, &admin, &Symbol::new(&env, "pause"));
+        CircuitBreaker::pause_function(&env, admin, func_name);
+        Ok(())
+    }
+
+    pub fn unpause_cb_function(
+        env: Env,
+        admin: Address,
+        func_name: Symbol,
+    ) -> Result<(), MessagingError> {
+        admin.require_auth();
+        ACL::require_permission(&env, &admin, &Symbol::new(&env, "unpause"));
+        CircuitBreaker::unpause_function(&env, admin, func_name);
+        Ok(())
+    }
+
+    pub fn get_cb_state(env: Env) -> CircuitBreakerState {
+        CircuitBreaker::get_state(&env)
+    }
+
+    pub fn get_cb_config(env: Env) -> CircuitBreakerConfig {
+        CircuitBreaker::get_config(&env)
     }
 
     pub fn get_stats(env: Env) -> MessagingStats {
