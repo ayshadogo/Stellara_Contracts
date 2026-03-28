@@ -9,6 +9,10 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
+import { WebsocketModule } from './websocket/websocket.module';
+import { PaymentModule } from './payment/payment.module';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { BackupModule } from './backup/backup.module';
 import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from './database.module';
@@ -38,6 +42,7 @@ import { validateEnv } from './config/env.validation';
 
 import { SupportModule } from './support/support.module';
 import { MultisigModule } from './multisig/multisig.module';
+
 import { VestingModule } from './vesting/vesting.module';
 import { LiquidityMiningModule } from './liquidity-mining/liquidity-mining.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
@@ -56,6 +61,7 @@ import { PredictiveMaintenanceModule } from './predictive-maintenance/predictive
 import { SecretsManagementModule } from './secrets-management/secrets-management.module';
 import { TransactionQueueModule } from './transaction-queue/transaction-queue.module';
 import { LiquidityAggregationModule } from './liquidity-aggregation/liquidity-aggregation.module';
+
 
 @Module({
   imports: [
@@ -110,9 +116,32 @@ import { LiquidityAggregationModule } from './liquidity-aggregation/liquidity-ag
     AbiRegistryModule,
     SupportModule,
     MultisigModule,
+
+    MonitoringModule,
+
     AnalyticsModule,
     ExperimentsModule,
     KycModule,
+    CollateralModule,
+    GeolocationModule,
+    VestingModule,
+    LiquidityMiningModule,
+    MonitoringModule,
+    CircuitBreakerModule,
+    TransactionQueueModule,
+    DataRetentionModule,
+    GraphqlModule,
+    ObjectStorageModule,
+    ZkModule,
+    IdentityModule,
+    ClearingModule,
+    DocumentProcessingModule,
+    FailoverModule,
+    CostMonitoringModule,
+    DataResidencyModule,
+    PredictiveMaintenanceModule,
+    SecretsManagementModule,
+    LiquidityAggregationModule,
 
   ],
   controllers: [AppController, UserController, DocsController],
