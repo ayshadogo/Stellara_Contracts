@@ -2,6 +2,7 @@ import { AbiRegistryModule } from './abi-registry/abi-registry.module';
 import { ExperimentsModule } from './experiments/experiments.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { KycModule } from './kyc/kyc.module';
+import { MarketSentimentModule } from './market-sentiment/market-sentiment.module';
 
 import { AdminModule } from './admin/admin.module';
 import { AppController } from './app.controller';
@@ -119,6 +120,7 @@ import { AIAuditorModule } from './ai-auditor/ai-auditor.module';
     AbiRegistryModule,
     SupportModule,
     MultisigModule,
+    MarketSentimentModule,
 
     MonitoringModule,
 

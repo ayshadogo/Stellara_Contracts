@@ -1145,6 +1145,46 @@ model AuditRetentionPolicy {
   @@map("audit_retention_policies")
 }
 
+model SentimentRecord {
+  id          String          @id @default(cuid())
+  source      String
+  asset       String
+  text        String?
+  sentiment   Decimal         @db.Decimal(5, 4)
+  label       SentimentLabel
+  collectedAt DateTime        @default(now()) @map("collected_at")
+  metadata    Json?
+
+  @@index([asset])
+  @@index([collectedAt])
+  @@map("sentiment_records")
+}
+
+model SentimentSignal {
+  id          String          @id @default(cuid())
+  asset       String
+  signal      SignalType
+  score       Decimal         @db.Decimal(5, 4)
+  reason      String?
+  generatedAt DateTime        @default(now()) @map("generated_at")
+
+  @@index([asset])
+  @@index([generatedAt])
+  @@map("sentiment_signals")
+}
+
+enum SentimentLabel {
+  POSITIVE
+  NEGATIVE
+  NEUTRAL
+}
+
+enum SignalType {
+  BUY
+  SELL
+  HOLD
+}
+
 // ─── Payment System Models ───────────────────────────────────────────────────
 
 enum SubscriptionStatus {
