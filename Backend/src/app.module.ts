@@ -67,6 +67,7 @@ import { PredictiveSettlementModule } from './predictive-settlement/predictive-s
 import { HFTModule } from './hft/hft.module';
 import { QuantumCryptoModule } from './crypto/quantum/quantum-crypto.module';
 import { AIAuditorModule } from './ai-auditor/ai-auditor.module';
+import { VoiceTradingModule } from './voice-trading/voice-trading.module';
 import { SyntheticAssetsModule } from './synthetic-assets/synthetic-assets.module';
 
 
@@ -160,6 +161,7 @@ import { SyntheticAssetsModule } from './synthetic-assets/synthetic-assets.modul
     HFTModule,
     QuantumCryptoModule,
     AIAuditorModule,
+    VoiceTradingModule,
     SyntheticAssetsModule,
 
   ],
