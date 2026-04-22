@@ -13,8 +13,8 @@ import { Throttle } from '@nestjs/throttler';
 import { UserService } from './user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { UserIdParamDto } from './user/dto/user-id-param.dto';
-import { UserQueryDto } from './user/dto/user-query.dto';
+import { UserIdParamDto } from './dto/user-id-param.dto';
+import { UserQueryDto } from './dto/user-query.dto';
 import { UserResponseDto, UserNotFoundDto } from '../common/dto/common.dto';
 
 @ApiTags('Users')
@@ -60,7 +60,7 @@ export class UserController {
     description: 'User not found',
     type: UserNotFoundDto,
   })
-  async getUser(@Param('id') id: string) {
+  async getUser(@Param() { id }: UserIdParamDto) {
     const user = await this.userService.getUserById(id);
     if (!user) {
       throw new NotFoundException('User not found');
@@ -81,14 +81,14 @@ export class UserController {
   @ApiOperation({ summary: 'Update an existing user' })
   @ApiResponse({ status: 200, description: 'User updated' })
   async updateUser(
-    @Param('id') id: string,
+    @Param() { id }: UserIdParamDto,
     @Body() updateUserDto: UpdateUserDto,
   ) {
     const user = await this.userService.updateUser(id, updateUserDto);
     return this.toUserResponse(user);
   }
 
-  private toUserResponse(user: any) {
+  private toUserResponse(user: any): UserResponseDto {
     return {
       id: user.id,
       walletAddress: user.walletAddress,

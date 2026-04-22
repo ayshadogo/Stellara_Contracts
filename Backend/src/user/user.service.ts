@@ -1,8 +1,7 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { User, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { CacheService } from '../cache/cache.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserQueryDto } from './dto/user-query.dto';
@@ -11,8 +10,8 @@ import { sanitizeUnknown } from '../common/utils/sanitize.util';
 @Injectable()
 export class UserService {
   constructor(
-    @Inject(CACHE_MANAGER) private cacheManager: Cache,
     private readonly prisma: PrismaService,
+    private readonly cache: CacheService,
   ) {}
 
   async findAll(query: UserQueryDto) {
@@ -38,13 +37,13 @@ export class UserService {
   }
 
   async getUserById(id: string): Promise<User | null> {
-    const cached = await this.cacheManager.get<User>(`user:${id}`);
+    const cached = await this.cache.get<User>(`user:${id}`);
     if (cached) return cached;
 
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) return null;
 
-    await this.cacheManager.set(`user:${id}`, user, 300000); // 5 min TTL in ms
+    await this.cache.set(`user:${id}`, user, 300); // 5 min TTL in seconds
     return user;
   }
 
@@ -82,7 +81,7 @@ export class UserService {
   }
 
   async invalidateUserCache(id: string) {
-    await this.cacheManager.del(`user:${id}`);
+    await this.cache.del(`user:${id}`);
   }
 
   private toPrismaJson(value: unknown): Prisma.InputJsonValue | undefined {
