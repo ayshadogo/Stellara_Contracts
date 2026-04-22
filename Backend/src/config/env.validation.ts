@@ -27,6 +27,15 @@ class EnvironmentVariables {
   REDIS_PORT: number;
 
   @IsString()
+  IPFS_HOST: string;
+
+  @IsNumber()
+  IPFS_PORT: number;
+
+  @IsString()
+  IPFS_PROTOCOL: string;
+
+  @IsString()
   JWT_SECRET: string;
 
   @IsNumber()
