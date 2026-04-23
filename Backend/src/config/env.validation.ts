@@ -116,6 +116,42 @@ class EnvironmentVariables {
   @IsOptional()
   @IsNumber()
   EMAIL_OUTBOX_ALERT_THRESHOLD?: number;
+
+  @IsOptional()
+  @IsNumber()
+  EMAIL_RETRY_MAX_ATTEMPTS?: number;
+
+  @IsOptional()
+  @IsNumber()
+  EMAIL_RETRY_MAX_AGE_DAYS?: number;
+
+  @IsOptional()
+  @IsNumber()
+  EMAIL_RETRY_BASE_BACKOFF_MS?: number;
+
+  @IsOptional()
+  @IsNumber()
+  EMAIL_RETRY_BATCH_SIZE?: number;
+
+  @IsOptional()
+  @IsString()
+  IPFS_GATEWAY_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  IPFS_GATEWAY_URLS?: string;
+
+  @IsOptional()
+  @IsNumber()
+  PROJECT_METADATA_FETCH_TIMEOUT_MS?: number;
+
+  @IsOptional()
+  @IsNumber()
+  PROJECT_METADATA_CACHE_TTL_MS?: number;
+
+  @IsOptional()
+  @IsNumber()
+  PROJECT_METADATA_CACHE_MAX_ENTRIES?: number;
 }
 
 export function validateEnv(config: Record<string, unknown>) {

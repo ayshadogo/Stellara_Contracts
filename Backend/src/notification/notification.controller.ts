@@ -2,11 +2,20 @@ import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma.service';
 import { PaginationDto, paginate } from '../common/dto/pagination.dto';
+import { EmailRetryTask } from './tasks/email-retry.task';
 
 @Controller('notifications')
 @Throttle({ default: { limit: 10, ttl: 60000 } })
 export class NotificationController {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly emailRetryTask: EmailRetryTask,
+    ) { }
+
+    @Get('email-retry/dashboard')
+    async getEmailRetryDashboard() {
+        return this.emailRetryTask.getRetryDashboard();
+    }
 
     @Get(':userId')
     async listNotifications(
