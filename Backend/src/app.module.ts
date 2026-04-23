@@ -34,6 +34,7 @@ import { validateEnv } from './config/env.validation';
 
 import { SupportModule } from './support/support.module';
 import { MultisigModule } from './multisig/multisig.module';
+import { InsuranceModule } from '../insurance/insurance.module';
 
 @Module({
   imports: [
@@ -88,6 +89,7 @@ import { MultisigModule } from './multisig/multisig.module';
     SupportModule,
     MultisigModule,
     AnalyticsModule,
+    InsuranceModule,
   ],
   controllers: [AppController, UserController, DocsController],
   providers: [AppService],

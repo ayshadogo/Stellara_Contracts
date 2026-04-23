@@ -1,21 +1,27 @@
 import { Injectable } from '@nestjs/common';
-import { InsurancePool } from './entities/insurance-pool.entity';
-import { Repository } from 'typeorm';
-import { InjectRepository } from '@nestjs/typeorm';
+import { PrismaService } from '../src/prisma.service';
 
 @Injectable()
 export class PoolService {
-  constructor(@InjectRepository(InsurancePool) private readonly repo: Repository<InsurancePool>) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async addCapital(poolId: string, amount: number) {
-    const pool = await this.repo.findOne({ where: { id: poolId } });
-    pool.capital += amount;
-    return this.repo.save(pool);
+    return this.prisma.pool.update({
+      where: { id: poolId },
+      data: {
+        totalCapacity: { increment: amount },
+        availableLiquidity: { increment: amount },
+      },
+    });
   }
 
   async lockCapital(poolId: string, amount: number) {
-    const pool = await this.repo.findOne({ where: { id: poolId } });
-    pool.lockedCapital += amount;
-    return this.repo.save(pool);
+    return this.prisma.pool.update({
+      where: { id: poolId },
+      data: {
+        lockedAmount: { increment: amount },
+        availableLiquidity: { decrement: amount },
+      },
+    });
   }
 }

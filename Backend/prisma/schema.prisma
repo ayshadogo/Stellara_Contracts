@@ -558,14 +558,17 @@ model Claim {
   id          String      @id @default(uuid())
   tenantId    String
   poolId      String?
+  policyId    String?     @map("policy_id")
   userAddress String
   amount      Decimal     @db.Decimal(18, 4)
+  payoutAmount Decimal?   @map("payout_amount") @db.Decimal(18, 4)
   status      ClaimStatus @default(PENDING)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   pool   Pool?  @relation(fields: [poolId], references: [id], onDelete: SetNull)
+  policy InsurancePolicy? @relation(fields: [policyId], references: [id])
 
   @@index([tenantId, id])
   @@index([tenantId, poolId])
@@ -1144,4 +1147,56 @@ enum ZendeskPriority {
   NORMAL
   HIGH
   URGENT
+}
+
+enum RiskType {
+  PROJECT_FAILURE
+  SMART_CONTRACT_EXPLOIT
+  MARKET_VOLATILITY
+  PARAMETRIC_WEATHER
+}
+
+enum PolicyStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  CLAIMED
+}
+
+model InsurancePolicy {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  user           User     @relation(fields: [userId], references: [id])
+  riskType       RiskType @map("risk_type")
+  premium        Decimal  @db.Decimal(18, 4)
+  coverageAmount Decimal  @map("coverage_amount") @db.Decimal(18, 4)
+  poolId         String   @map("pool_id")
+  pool           Pool     @relation(fields: [poolId], references: [id])
+  status         PolicyStatus @default(ACTIVE)
+  expiresAt      DateTime? @map("expires_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  claims         Claim[]
+
+  @@index([userId])
+  @@index([poolId])
+  @@index([status])
+  @@map("insurance_policies")
+}
+
+model ReinsuranceContract {
+  id            String   @id @default(uuid())
+  poolId        String   @map("pool_id")
+  pool          Pool     @relation(fields: [poolId], references: [id])
+  coverageLimit Decimal  @map("coverage_limit") @db.Decimal(18, 4)
+  premiumRate   Decimal  @map("premium_rate") @db.Decimal(18, 4)
+  provider      String?
+  startDate     DateTime @default(now()) @map("start_date")
+  endDate       DateTime @map("end_date")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([poolId])
+  @@map("reinsurance_contracts")
 }
