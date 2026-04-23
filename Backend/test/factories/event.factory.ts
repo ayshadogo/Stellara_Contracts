@@ -1,8 +1,8 @@
-import { ContractEventType, SorobanEvent } from '../../src/indexer/types/event-types';
+import { SorobanEvent } from '../../src/indexer/types/event-types';
 import { randomUUID } from 'crypto';
 
 export const createSorobanEvent = (
-  eventType: ContractEventType,
+  eventType: string,
   dataXdr: string,
   overrides: Partial<SorobanEvent> = {}
 ): SorobanEvent => {
@@ -24,7 +24,7 @@ export const createSorobanEvent = (
 export const generateEventSequence = (
   contractId: string,
   startLedger: number,
-  events: Array<{ type: ContractEventType; data: string }>
+  events: Array<{ type: string; data: string }>
 ): SorobanEvent[] => {
   return events.map((e, index) => 
     createSorobanEvent(e.type, e.data, {

@@ -54,6 +54,20 @@ import { MetricsService } from './metrics.service';
 
     // DB metrics
     makeHistogramProvider({ name: 'db_query_duration_seconds', help: 'Database query duration', labelNames: ['operation'], buckets: [0.01, 0.05, 0.1, 0.5, 1, 5] }),
+
+    // Email retry metrics
+    makeCounterProvider({ name: 'email_retry_runs_total', help: 'Total email retry task runs', labelNames: ['status'] }),
+    makeCounterProvider({ name: 'email_retry_processed_total', help: 'Total processed emails in retry task', labelNames: ['outcome'] }),
+    makeCounterProvider({ name: 'email_retry_api_key_missing_total', help: 'Email retry runs skipped due to missing SendGrid API key' }),
+    makeCounterProvider({ name: 'email_retry_backoff_skips_total', help: 'Emails skipped by retry backoff window' }),
+    makeCounterProvider({ name: 'email_retry_old_skips_total', help: 'Emails skipped due to maximum retry age', labelNames: ['reason'] }),
+    makeGaugeProvider({ name: 'email_retry_batch_size', help: 'Current email retry batch size' }),
+    makeGaugeProvider({ name: 'email_retry_pending_failed', help: 'Current failed emails fetched for retry batch' }),
+    makeHistogramProvider({ name: 'email_retry_duration_seconds', help: 'Email retry task duration in seconds', buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10] }),
+
+    // Project metadata metrics
+    makeCounterProvider({ name: 'project_metadata_fetch_total', help: 'Project metadata fetch outcomes', labelNames: ['outcome'] }),
+    makeCounterProvider({ name: 'project_metadata_completeness_total', help: 'Project metadata completeness levels', labelNames: ['level'] }),
   ],
   exports: [MetricsService],
 })

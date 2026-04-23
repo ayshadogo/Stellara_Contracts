@@ -106,16 +106,19 @@ export function validateEventData(eventType: string, data: Record<string, any>):
   }
 
   switch (eventType) {
-    case 'PROJECT_CREATED':
+    case 'proj_new':
       validateProjectCreatedEvent(data);
       break;
-    case 'CONTRIBUTION_MADE':
+    case 'contrib':
       validateContributionMadeEvent(data);
       break;
-    case 'MILESTONE_APPROVED':
+    case 'm_create':
+      validateMilestoneCreatedEvent(data);
+      break;
+    case 'm_apprv':
       validateMilestoneApprovedEvent(data);
       break;
-    case 'FUNDS_RELEASED':
+    case 'release':
       validateFundsReleasedEvent(data);
       break;
     // Add more event types as needed
@@ -160,6 +163,38 @@ function validateProjectCreatedEvent(data: any): void {
   if (!isValidStellarAddress(data.token)) {
     throw new EventValidationError('Invalid token address format', data);
   }
+
+  const optionalHashes = [data.ipfsHash, data.metadataHash, data.metadataCid];
+  for (const hash of optionalHashes) {
+    if (hash !== undefined && hash !== null && !isValidIpfsHash(hash)) {
+      throw new EventValidationError('Invalid IPFS metadata hash format', data);
+    }
+  }
+}
+
+function isValidIpfsHash(hash: unknown): boolean {
+  if (typeof hash !== 'string') {
+    return false;
+  }
+
+  let normalized = hash.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  if (normalized.startsWith('ipfs://')) {
+    normalized = normalized.slice('ipfs://'.length);
+  }
+
+  if (normalized.startsWith('/ipfs/')) {
+    normalized = normalized.slice('/ipfs/'.length);
+  }
+
+  if (normalized.includes('/')) {
+    normalized = normalized.split('/')[0];
+  }
+
+  return /^[A-Za-z0-9]{20,100}$/.test(normalized);
 }
 
 function validateContributionMadeEvent(data: any): void {
@@ -206,6 +241,26 @@ function validateMilestoneApprovedEvent(data: any): void {
   const approvalCount = Number(data.approvalCount);
   if (!Number.isInteger(approvalCount) || approvalCount < 0) {
     throw new EventValidationError('approvalCount must be non-negative integer', data);
+  }
+}
+
+function validateMilestoneCreatedEvent(data: any): void {
+  if (data.projectId === undefined || data.projectId === null) {
+    throw new EventValidationError('projectId is required', data);
+  }
+  if (!isValidProjectId(data.projectId)) {
+    throw new EventValidationError('Invalid projectId format', data);
+  }
+
+  if (data.milestoneId === undefined || data.milestoneId === null) {
+    throw new EventValidationError('milestoneId is required', data);
+  }
+  if (!isValidMilestoneId(data.milestoneId)) {
+    throw new EventValidationError('Invalid milestoneId format', data);
+  }
+
+  if (data.fundingAmount !== undefined && data.fundingAmount !== null && !isValidAmount(data.fundingAmount)) {
+    throw new EventValidationError('fundingAmount must be positive when provided', data);
   }
 }
 

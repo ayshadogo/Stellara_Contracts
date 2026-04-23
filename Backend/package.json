@@ -4,6 +4,7 @@
   "description": "Backend services for the project",
   "author": "",
   "private": true,
+  "type": "module",
   "license": "MIT",
   "scripts": {
     "build": "nest build",

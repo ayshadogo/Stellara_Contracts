@@ -27,6 +27,16 @@ export class MetricsService {
     @InjectMetric('rpc_request_duration_seconds') private readonly rpcDuration: Histogram<string>,
     @InjectMetric('rpc_errors_total')          private readonly rpcErrors: Counter<string>,
     @InjectMetric('rpc_circuit_breaker_state') private readonly rpcCircuitState: Gauge<string>,
+    @InjectMetric('email_retry_runs_total') private readonly emailRetryRuns: Counter<string>,
+    @InjectMetric('email_retry_processed_total') private readonly emailRetryProcessed: Counter<string>,
+    @InjectMetric('email_retry_api_key_missing_total') private readonly emailRetryApiKeyMissing: Counter<string>,
+    @InjectMetric('email_retry_backoff_skips_total') private readonly emailRetryBackoffSkips: Counter<string>,
+    @InjectMetric('email_retry_old_skips_total') private readonly emailRetryOldSkips: Counter<string>,
+    @InjectMetric('email_retry_batch_size') private readonly emailRetryBatchSize: Gauge<string>,
+    @InjectMetric('email_retry_pending_failed') private readonly emailRetryPendingFailed: Gauge<string>,
+    @InjectMetric('email_retry_duration_seconds') private readonly emailRetryDuration: Histogram<string>,
+    @InjectMetric('project_metadata_fetch_total') private readonly projectMetadataFetch: Counter<string>,
+    @InjectMetric('project_metadata_completeness_total') private readonly projectMetadataCompleteness: Counter<string>,
   ) {}
 
   // HTTP
@@ -100,5 +110,47 @@ export class MetricsService {
   setRpcCircuitBreakerState(state: 'closed' | 'open' | 'half-open') {
     const stateValue = state === 'closed' ? 0 : state === 'open' ? 1 : 2;
     this.rpcCircuitState.set(stateValue);
+  }
+
+  // Email retry
+  recordEmailRetryRun(status: 'completed' | 'no_work' | 'skipped_missing_api_key') {
+    this.emailRetryRuns.inc({ status });
+  }
+
+  recordEmailRetryProcessed(outcome: 'sent' | 'failed' | 'max_attempts_reached') {
+    this.emailRetryProcessed.inc({ outcome });
+  }
+
+  recordEmailRetryApiKeyMissing() {
+    this.emailRetryApiKeyMissing.inc();
+  }
+
+  recordEmailRetryBackoffSkip() {
+    this.emailRetryBackoffSkips.inc();
+  }
+
+  recordEmailRetryOldSkip(count = 1) {
+    this.emailRetryOldSkips.inc({ reason: 'max_retry_age' }, count);
+  }
+
+  setEmailRetryBatchSize(count: number) {
+    this.emailRetryBatchSize.set(count);
+  }
+
+  setEmailRetryPendingFailed(count: number) {
+    this.emailRetryPendingFailed.set(count);
+  }
+
+  recordEmailRetryDuration(durationSec: number) {
+    this.emailRetryDuration.observe(durationSec);
+  }
+
+  // Project metadata
+  recordProjectMetadataFetch(outcome: 'fetched' | 'cached' | 'fetch_failed' | 'no_hash') {
+    this.projectMetadataFetch.inc({ outcome });
+  }
+
+  recordProjectMetadataCompleteness(level: 'complete' | 'partial' | 'minimal' | 'fallback') {
+    this.projectMetadataCompleteness.inc({ level });
   }
 }

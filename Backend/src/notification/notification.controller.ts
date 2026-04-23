@@ -11,6 +11,7 @@ import { Prisma } from '@prisma/client';
 import { Observable, map } from 'rxjs';
 import { PrismaService } from '../prisma.service';
 import { PaginationDto, paginate } from '../common/dto/pagination.dto';
+import { EmailRetryTask } from './tasks/email-retry.task';
 import { NotificationService } from './services/notification.service';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { PushSubscriptionDto } from './dto/push-subscription.dto';
@@ -20,6 +21,15 @@ import { NotificationsStreamService } from './streams/notifications-stream.servi
 @Controller('notifications')
 @Throttle({ default: { limit: 10, ttl: 60000 } })
 export class NotificationController {
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly emailRetryTask: EmailRetryTask,
+    ) { }
+
+    @Get('email-retry/dashboard')
+    async getEmailRetryDashboard() {
+        return this.emailRetryTask.getRetryDashboard();
+    }
         constructor(
             private readonly prisma: PrismaService,
             private readonly notificationService: NotificationService,

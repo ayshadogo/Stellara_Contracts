@@ -23,6 +23,8 @@ describe('Indexer Pipeline (e2e)', () => {
   beforeEach(async () => {
     // Clear DB between tests
     await (global as any).prisma.processedEvent.deleteMany();
+    await (global as any).prisma.milestone.deleteMany();
+    await (global as any).prisma.contribution.deleteMany();
     await (global as any).prisma.project.deleteMany();
     await (global as any).prisma.user.deleteMany();
     await (global as any).prisma.ledgerCursor.deleteMany();
@@ -35,7 +37,7 @@ describe('Indexer Pipeline (e2e)', () => {
     const eventId = 'event-1';
     
     // 1. Prepare mock RPC response
-    const mockEvent = createSorobanEvent(ContractEventType.PROJECT_CREATED, 'mock-xdr', {
+    const mockEvent = createSorobanEvent('proj_new', 'mock-xdr', {
       contractId,
       id: eventId,
       ledger: 1001,
@@ -79,7 +81,7 @@ describe('Indexer Pipeline (e2e)', () => {
 
   it('should handle idempotency - processing same event twice', async () => {
     const eventId = 'idemp-1';
-    const mockEvent = createSorobanEvent(ContractEventType.PROJECT_CREATED, 'mock-xdr', { id: eventId });
+    const mockEvent = createSorobanEvent('proj_new', 'mock-xdr', { id: eventId });
 
     jest.spyOn(indexerService as any, 'parseEventData').mockReturnValue({
       projectId: 2,
@@ -108,7 +110,7 @@ describe('Indexer Pipeline (e2e)', () => {
     const eventCount = 100;
     const events = [];
     for (let i = 0; i < eventCount; i++) {
-      events.push(createSorobanEvent(ContractEventType.PROJECT_CREATED, 'xdr', { id: `bulk-${i}`, ledger: 1000 + i }));
+      events.push(createSorobanEvent('proj_new', 'xdr', { id: `bulk-${i}`, ledger: 1000 + i }));
     }
 
     jest.spyOn(indexerService as any, 'parseEventData').mockImplementation((_, type, id) => ({
@@ -132,5 +134,148 @@ describe('Indexer Pipeline (e2e)', () => {
     console.log(`Benchmark: Processed ${eventCount} events in ${durationSeconds.toFixed(2)}s (${eventsPerSecond.toFixed(2)} events/sec)`);
     
     expect(eventsPerSecond).toBeGreaterThan(0);
+  });
+
+  it('should map and update only the targeted milestone across workflow events', async () => {
+    const contractId = 'CC' + Math.random().toString(36).substring(7).toUpperCase();
+    const validCreator = `G${'A'.repeat(55)}`;
+    const validToken = `C${'B'.repeat(55)}`;
+    const validContributor = `G${'C'.repeat(55)}`;
+
+    const projectCreatedEvent = createSorobanEvent('proj_new', 'xdr', {
+      contractId,
+      id: 'wf-proj',
+      ledger: 2001,
+    });
+    const milestoneOneCreated = createSorobanEvent('m_create', 'xdr', {
+      contractId,
+      id: 'wf-m1',
+      ledger: 2002,
+    });
+    const milestoneApproved = createSorobanEvent('m_apprv', 'xdr', {
+      contractId,
+      id: 'wf-apprv',
+      ledger: 2004,
+    });
+    const fundsReleased = createSorobanEvent('release', 'xdr', {
+      contractId,
+      id: 'wf-funds',
+      ledger: 2005,
+    });
+    const contributionEvent = createSorobanEvent('contrib', 'xdr', {
+      contractId,
+      id: 'wf-contrib',
+      ledger: 2006,
+    });
+
+    jest.spyOn(indexerService as any, 'parseEventData').mockImplementation((_: string, eventType: string) => {
+      switch (eventType) {
+        case 'proj_new':
+          return {
+            projectId: 10,
+            creator: validCreator,
+            fundingGoal: '1000000',
+            deadline: Math.floor(Date.now() / 1000) + 86400,
+            token: validToken,
+          };
+        case 'm_create':
+          return {
+            projectId: 10,
+            milestoneId: 1,
+            title: 'Milestone One',
+            description: 'First milestone',
+            fundingAmount: '250000',
+          };
+        case 'm_apprv':
+          return {
+            projectId: 10,
+            milestoneId: 1,
+            approvalCount: 2,
+          };
+        case 'release':
+          return {
+            projectId: 10,
+            milestoneId: 1,
+            amount: '250000',
+          };
+        case 'contrib':
+          return {
+            projectId: 10,
+            contributor: validContributor,
+            amount: '50000',
+            totalRaised: '50000',
+          };
+        default:
+          return {};
+      }
+    });
+
+    mockRpcServer.getLatestLedger.mockResolvedValue({ sequence: 2006 });
+    mockRpcServer.getEvents.mockResolvedValue({
+      events: [
+        projectCreatedEvent,
+        milestoneOneCreated,
+        contributionEvent,
+      ],
+      cursor: undefined,
+    });
+
+    await indexerService.pollEvents();
+
+    const project = await (global as any).prisma.project.findUnique({
+      where: { contractId: '10' },
+    });
+
+    expect(project).toBeDefined();
+
+    await (global as any).prisma.milestone.create({
+      data: {
+        projectId: project.id,
+        contractMilestoneId: '2',
+        title: 'Milestone Two',
+        description: 'Second milestone',
+        fundingAmount: BigInt(100000),
+        status: 'PENDING',
+      },
+    });
+
+    mockRpcServer.getEvents.mockResolvedValue({
+      events: [
+        milestoneApproved,
+        fundsReleased,
+      ],
+      cursor: undefined,
+    });
+
+    await indexerService.pollEvents();
+
+    const milestone = await (global as any).prisma.milestone.findUnique({
+      where: {
+        projectId_contractMilestoneId: {
+          projectId: project.id,
+          contractMilestoneId: '1',
+        },
+      },
+    });
+
+    expect(milestone).toBeDefined();
+    expect(milestone.status).toBe('FUNDED');
+
+    const untouchedMilestone = await (global as any).prisma.milestone.findUnique({
+      where: {
+        projectId_contractMilestoneId: {
+          projectId: project.id,
+          contractMilestoneId: '2',
+        },
+      },
+    });
+
+    expect(untouchedMilestone).toBeDefined();
+    expect(untouchedMilestone.status).toBe('PENDING');
+
+    const allMilestones = await (global as any).prisma.milestone.findMany({
+      where: { projectId: project.id },
+    });
+    expect(allMilestones).toHaveLength(2);
   });
 });
