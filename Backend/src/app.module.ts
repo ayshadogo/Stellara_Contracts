@@ -24,6 +24,11 @@ import { MultisigModule } from './multisig/multisig.module';
 import { NonceModule } from './nonce/nonce.module';
 import { V1Module } from './modules/v1/v1.module';
 import { V2Module } from './modules/v2/v2.module';
+// Reliability & Observability Modules (#680, #681, #682, #683)
+import { CircuitBreakerModule } from './circuit-breaker/circuit-breaker.module';
+import { TracingModule } from './tracing/tracing.module';
+import { DeadLetterQueueModule } from './dead-letter-queue/dead-letter-queue.module';
+import { IdempotencyModule } from './idempotency/idempotency.module';
 
 // Middleware & Common
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
@@ -31,6 +36,7 @@ import { LoggingMiddleware } from './common/middleware/logging.middleware';
 import { ApiVersionMiddleware } from './common/middleware/api-version.middleware';
 import { TimeoutMiddleware } from './common/middleware/timeout.middleware';
 import { SanitizationMiddleware } from './common/middleware/sanitization.middleware';
+import { IdempotencyMiddleware } from './idempotency/idempotency.middleware';
 import { AppLogger } from './common/logger/app.logger';
 
 
@@ -67,6 +73,11 @@ import { AppLogger } from './common/logger/app.logger';
     SupportModule,
     MultisigModule,
     AppCacheModule,
+    // Reliability & Observability
+    CircuitBreakerModule,
+    TracingModule,
+    DeadLetterQueueModule,
+    IdempotencyModule,
   ],
   controllers: [AppController],
   providers: [AppService, AppLogger, ApiVersionMiddleware, TimeoutMiddleware],
@@ -80,6 +91,7 @@ export class AppModule implements NestModule {
         ApiVersionMiddleware,
         TimeoutMiddleware,
         SanitizationMiddleware,
+        IdempotencyMiddleware,
       )
       .forRoutes('*');
   }
