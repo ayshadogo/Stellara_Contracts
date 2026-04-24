@@ -1,58 +1,59 @@
 import { Injectable, LoggerService } from '@nestjs/common';
-import { CORRELATION_ID_HEADER } from '../middleware/correlation-id.middleware';
-
-type LogLevel = 'info' | 'warn' | 'error' | 'debug' | 'verbose';
+import * as winston from 'winston';
+import 'winston-daily-rotate-file';
 
 @Injectable()
 export class AppLogger implements LoggerService {
-  private write(level: LogLevel, message: string, context?: string, meta?: Record<string, unknown>): void {
-    const entry = {
-      timestamp: new Date().toISOString(),
-      level,
-      context,
-      message,
-      ...meta,
-    };
-    if (level === 'error') {
-      process.stderr.write(JSON.stringify(entry) + '\n');
-    } else {
-      process.stdout.write(JSON.stringify(entry) + '\n');
-    }
-  }
+  private logger: winston.Logger;
 
-  log(message: string, context?: string): void {
-    this.write('info', message, context);
-  }
+  constructor() {
+    const logFormat = winston.format.combine(
+      winston.format.timestamp(),
+      winston.format.json(),
+    );
 
-  error(message: string, trace?: string, context?: string): void {
-    this.write('error', message, context, trace ? { trace } : undefined);
-  }
-
-  warn(message: string, context?: string): void {
-    this.write('warn', message, context);
-  }
-
-  debug(message: string, context?: string): void {
-    this.write('debug', message, context);
-  }
-
-  verbose(message: string, context?: string): void {
-    this.write('verbose', message, context);
-  }
-
-  logRequest(
-    correlationId: string,
-    method: string,
-    path: string,
-    statusCode: number,
-    durationMs: number,
-  ): void {
-    this.write('info', 'HTTP Request', 'HTTP', {
-      [CORRELATION_ID_HEADER]: correlationId,
-      method,
-      path,
-      statusCode,
-      durationMs,
+    this.logger = winston.createLogger({
+      level: process.env.LOG_LEVEL || 'info',
+      format: logFormat,
+      transports: [
+        new winston.transports.Console({
+          format: winston.format.combine(
+            winston.format.colorize(),
+            winston.format.simple(),
+          ),
+        }),
+        new winston.transports.DailyRotateFile({
+          filename: 'logs/application-%DATE%.log',
+          datePattern: 'YYYY-MM-DD',
+          zippedArchive: true,
+          maxSize: '20m',
+          maxFiles: '14d',
+        }),
+      ],
     });
+  }
+
+  log(message: string, context?: string) {
+    this.logger.info(message, { context });
+  }
+
+  error(message: string, trace?: string, context?: string) {
+    this.logger.error(message, { trace, context });
+  }
+
+  warn(message: string, context?: string) {
+    this.logger.warn(message, { context });
+  }
+
+  debug(message: string, context?: string) {
+    this.logger.debug(message, { context });
+  }
+
+  verbose(message: string, context?: string) {
+    this.logger.verbose(message, { context });
+  }
+
+  logRequest(data: any) {
+    this.logger.info('HTTP Request', data);
   }
 }

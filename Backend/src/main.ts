@@ -6,6 +6,7 @@ import * as yaml from 'js-yaml';
 import { AppModule } from './app.module';
 import { PrismaService } from './prisma.service';
 import { AppLogger } from './common/logger/app.logger';
+import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -21,6 +22,9 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  // Global logging interceptor
+  app.useGlobalInterceptors(new RequestLoggingInterceptor(logger));
 
   // API prefix and version normalization
   const rawPrefix = configService.get<string>('API_PREFIX', 'api');

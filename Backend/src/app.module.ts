@@ -29,6 +29,9 @@ import { CircuitBreakerModule } from './circuit-breaker/circuit-breaker.module';
 import { TracingModule } from './tracing/tracing.module';
 import { DeadLetterQueueModule } from './dead-letter-queue/dead-letter-queue.module';
 import { IdempotencyModule } from './idempotency/idempotency.module';
+import { BulkModule } from './bulk/bulk.module';
+import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
+import { StellaraGraphQLModule } from './graphql/graphql.module';
 
 // Middleware & Common
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
@@ -78,6 +81,9 @@ import { AppLogger } from './common/logger/app.logger';
     TracingModule,
     DeadLetterQueueModule,
     IdempotencyModule,
+    BulkModule,
+    FeatureFlagsModule,
+    StellaraGraphQLModule,
   ],
   controllers: [AppController],
   providers: [AppService, AppLogger, ApiVersionMiddleware, TimeoutMiddleware],
