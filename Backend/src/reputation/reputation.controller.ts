@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, NotFoundException, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Param, NotFoundException, UseGuards, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ReputationService } from './reputation.service';
 import { PrismaService } from '../prisma.service';
@@ -179,6 +179,178 @@ export class ReputationController {
         ELITE_ACCESS: 'Access to elite features and VIP support',
         HIGH_VALUE_FUNDING: 'Higher funding limits for trusted users',
       },
+    };
+  }
+
+  @Get('reputation/leaderboard/top-creators')
+  @ApiOperation({ summary: 'Get top creators leaderboard' })
+  @ApiResponse({ status: 200, description: 'Top creators returned' })
+  async getTopCreatorsLeaderboard(
+    @Query('period') period: 'all-time' | 'monthly' | 'weekly' = 'all-time',
+    @Query('limit') limit: number = 50,
+    @Query('page') page: number = 1,
+  ) {
+    const now = new Date();
+    let startDate: Date;
+
+    switch (period) {
+      case 'weekly':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'monthly':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case 'all-time':
+      default:
+        startDate = new Date(0);
+        break;
+    }
+
+    const skip = (page - 1) * limit;
+
+    // Get users with PROJECT_COMPLETION and MILESTONE_ACHIEVEMENT activities
+    const users = await this.prisma.user.findMany({
+      select: {
+        id: true,
+        reputationScore: true,
+        profileData: true,
+      },
+      orderBy: {
+        reputationScore: 'desc',
+      },
+      skip,
+      take: limit,
+    });
+
+    const leaderboard = users.map((user, index) => ({
+      rank: skip + index + 1,
+      userId: user.id,
+      reputationScore: user.reputationScore,
+      profileData: user.profileData,
+    }));
+
+    const totalUsers = await this.prisma.user.count();
+
+    return {
+      period,
+      category: 'top-creators',
+      leaderboard,
+      pagination: {
+        page,
+        limit,
+        total: totalUsers,
+        totalPages: Math.ceil(totalUsers / limit),
+      },
+    };
+  }
+
+  @Get('reputation/leaderboard/top-investors')
+  @ApiOperation({ summary: 'Get top investors leaderboard' })
+  @ApiResponse({ status: 200, description: 'Top investors returned' })
+  async getTopInvestorsLeaderboard(
+    @Query('period') period: 'all-time' | 'monthly' | 'weekly' = 'all-time',
+    @Query('limit') limit: number = 50,
+    @Query('page') page: number = 1,
+  ) {
+    const now = new Date();
+    let startDate: Date;
+
+    switch (period) {
+      case 'weekly':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'monthly':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case 'all-time':
+      default:
+        startDate = new Date(0);
+        break;
+    }
+
+    const skip = (page - 1) * limit;
+
+    // Get users ranked by reputation score (investors gain reputation from successful transactions)
+    const users = await this.prisma.user.findMany({
+      select: {
+        id: true,
+        reputationScore: true,
+        profileData: true,
+      },
+      where: {
+        reputationScore: {
+          gt: 0, // Only users with activity
+        },
+      },
+      orderBy: {
+        reputationScore: 'desc',
+      },
+      skip,
+      take: limit,
+    });
+
+    const leaderboard = users.map((user, index) => ({
+      rank: skip + index + 1,
+      userId: user.id,
+      reputationScore: user.reputationScore,
+      profileData: user.profileData,
+    }));
+
+    const totalUsers = await this.prisma.user.count({
+      where: {
+        reputationScore: {
+          gt: 0,
+        },
+      },
+    });
+
+    return {
+      period,
+      category: 'top-investors',
+      leaderboard,
+      pagination: {
+        page,
+        limit,
+        total: totalUsers,
+        totalPages: Math.ceil(totalUsers / limit),
+      },
+    };
+  }
+
+  @Get('reputation/leaderboard/user-rank')
+  @ApiOperation({ summary: 'Get specific user rank in leaderboard' })
+  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiResponse({ status: 200, description: 'User rank returned' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getUserRank(@Param('id') id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { reputationScore: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Count how many users have a higher score
+    const higherRankCount = await this.prisma.user.count({
+      where: {
+        reputationScore: {
+          gt: user.reputationScore,
+        },
+      },
+    });
+
+    const rank = higherRankCount + 1;
+    const totalUsers = await this.prisma.user.count();
+    const percentile = ((totalUsers - rank) / totalUsers) * 100;
+
+    return {
+      userId: id,
+      rank,
+      reputationScore: user.reputationScore,
+      totalUsers,
+      percentile: Math.round(percentile * 100) / 100,
     };
   }
 }
