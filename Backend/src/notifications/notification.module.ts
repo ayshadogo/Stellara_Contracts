@@ -8,10 +8,11 @@ import { NotificationController } from './controllers/notification.controller';
 import { WebsocketModule } from '../websocket/websocket.module';
 import { RedisModule } from '../redis/redis.module';
 import { AuthModule } from '../auth/auth.module';
+import { User } from '../auth/entities/user.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Notification, NotificationPreference]),
+    TypeOrmModule.forFeature([Notification, NotificationPreference, User]),
     WebsocketModule,
     RedisModule,
     AuthModule,

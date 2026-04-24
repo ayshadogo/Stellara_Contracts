@@ -44,7 +44,7 @@ export class Notification {
   @Column({ type: 'simple-array', default: () => [] })
   channels: NotificationChannel[];
 
-  @ManyToOne(() => User, { eager: true })
+  @ManyToOne(() => User, { eager: false })
   @JoinColumn({ name: 'userId' })
   user: User;
 

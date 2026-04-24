@@ -9,6 +9,8 @@ export type {
   MigrationValidationRule,
   BackupStrategy,
   EnhancedMigration,
+} from './migration-strategy';
+export {
   MigrationValidator,
   MigrationBackup,
   MigrationRollback,
@@ -19,10 +21,8 @@ export type {
 export { MigrationExecutor } from './migration-executor';
 
 // Migration Testing
-export type {
-  MigrationTestResult,
-  MigrationTestingService,
-} from './migration-testing.service';
+export type { MigrationTestResult } from './migration-testing.service';
+export { MigrationTestingService } from './migration-testing.service';
 
 // Migration Manager
 export { MigrationManagerService } from './migration-manager.service';

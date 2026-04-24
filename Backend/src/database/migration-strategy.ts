@@ -6,6 +6,10 @@
 import { QueryRunner } from 'typeorm';
 import { Logger } from '@nestjs/common';
 
+function getDriverType(queryRunner: QueryRunner): string {
+  return String(queryRunner.connection.options.type);
+}
+
 /**
  * Represents the state and metadata of a migration execution
  */
@@ -136,6 +140,16 @@ export class MigrationValidator {
       name: 'TableExists',
       async validate(queryRunner: QueryRunner) {
         try {
+          const driver = getDriverType(queryRunner);
+
+          if (driver === 'sqlite' || driver === 'better-sqlite3') {
+            const result = await queryRunner.query(
+              `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`,
+              [tableName],
+            );
+            return result.length > 0;
+          }
+
           const result = await queryRunner.query(
             `SELECT EXISTS (
               SELECT 1 FROM information_schema.tables 
@@ -143,7 +157,7 @@ export class MigrationValidator {
             )`,
             [tableName],
           );
-          return result[0].exists;
+          return Boolean(result[0]?.exists);
         } catch {
           return false;
         }
@@ -161,6 +175,15 @@ export class MigrationValidator {
       name: 'ColumnExists',
       async validate(queryRunner: QueryRunner) {
         try {
+          const driver = getDriverType(queryRunner);
+
+          if (driver === 'sqlite' || driver === 'better-sqlite3') {
+            const result = await queryRunner.query(
+              `PRAGMA table_info("${tableName}")`,
+            );
+            return result.some((column: { name: string }) => column.name === columnName);
+          }
+
           const result = await queryRunner.query(
             `SELECT EXISTS (
               SELECT 1 FROM information_schema.columns
@@ -168,7 +191,7 @@ export class MigrationValidator {
             )`,
             [tableName, columnName],
           );
-          return result[0].exists;
+          return Boolean(result[0]?.exists);
         } catch {
           return false;
         }
@@ -240,14 +263,33 @@ export class MigrationValidator {
       name: 'IndexExists',
       async validate(queryRunner: QueryRunner) {
         try {
+          const driver = getDriverType(queryRunner);
+
+          if (driver === 'sqlite' || driver === 'better-sqlite3') {
+            const tables = await queryRunner.query(
+              `SELECT name FROM sqlite_master WHERE type = 'table'`,
+            );
+
+            for (const table of tables) {
+              const indexes = await queryRunner.query(
+                `PRAGMA index_list("${table.name}")`,
+              );
+              if (indexes.some((index: { name: string }) => index.name === indexName)) {
+                return true;
+              }
+            }
+
+            return false;
+          }
+
           const result = await queryRunner.query(
             `SELECT EXISTS (
-              SELECT 1 FROM information_schema.statistics
-              WHERE index_name = $1
+              SELECT 1 FROM pg_indexes
+              WHERE indexname = $1
             )`,
             [indexName],
           );
-          return result[0].exists;
+          return Boolean(result[0]?.exists);
         } catch {
           return false;
         }

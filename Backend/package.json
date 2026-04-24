@@ -23,7 +23,9 @@
     "migration:generate": "npm run typeorm -- migration:generate -d src/database/data-source.ts",
     "migration:run": "npm run typeorm -- migration:run -d src/database/data-source.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/data-source.ts",
-    "migration:show": "npm run typeorm -- migration:show -d src/database/data-source.ts"
+    "migration:show": "npm run typeorm -- migration:show -d src/database/data-source.ts",
+    "migration:test": "jest src/database/migration.integration.spec.ts --runInBand",
+    "migration:dry-run": "jest src/database/migration.integration.spec.ts -t \"should run dry-run test\" --runInBand"
   },
   "dependencies": {
     "@nestjs/bull": "^11.0.0",

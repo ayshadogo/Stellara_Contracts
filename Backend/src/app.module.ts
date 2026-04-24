@@ -18,27 +18,17 @@ import { WorkflowModule } from './workflow/workflow.module';
 import { QueueModule } from './queue/queue.module';
 import { AuthModule } from './auth/auth.module';
 import { MarketDataModule } from './market-data/market-data.module';
+import { NotificationModule } from './notifications/notification.module';
+import { InsuranceModule } from './insurance/insurance.module';
+import { DataArchivalModule } from './data-archival/data-archival.module';
+import { DatabaseOptimizationModule } from './database-optimization/database-optimization.module';
 
 import { RolesGuard } from './guards/roles.guard';
 
-import { Workflow } from './workflow/entities/workflow.entity';
-import { WorkflowStep } from './workflow/entities/workflow-step.entity';
-import { User } from './auth/entities/user.entity';
-import { WalletBinding } from './auth/entities/wallet-binding.entity';
-import { LoginNonce } from './auth/entities/login-nonce.entity';
-import { RefreshToken } from './auth/entities/refresh-token.entity';
-import { ApiToken } from './auth/entities/api-token.entity';
 import { AuditModule } from './audit/audit.module';
-import { AuditLog } from './audit/audit.entity';
 import { GdprModule } from './gdpr/gdpr.module';
-import { Consent } from './gdpr/entities/consent.entity';
-import { VoiceJob } from './voice/entities/voice-job.entity';
 import { ThrottleModule } from './throttle/throttle.module';
 import { TenantModule } from './tenancy/tenant.module';
-import { Tenant } from './tenancy/entities/tenant.entity';
-import { TenantConfig } from './tenancy/entities/tenant-config.entity';
-import { TenantUsage } from './tenancy/entities/tenant-usage.entity';
-import { TenantInvitation } from './tenancy/entities/tenant-invitation.entity';
 
 
 @Module({
@@ -59,24 +49,12 @@ import { TenantInvitation } from './tenancy/entities/tenant-invitation.entity';
         const baseConfig: any = {
           type: dbType,
           synchronize: configService.get('NODE_ENV') === 'development',
-          logging: configService.get('NODE_ENV') === 'development',
-          entities: [
-            Workflow,
-            WorkflowStep,
-            User,
-            WalletBinding,
-            LoginNonce,
-            RefreshToken,
-            ApiToken,
-            AuditLog,
-            Consent,
-            VoiceJob,
-            // Tenant entities
-            Tenant,
-            TenantConfig,
-            TenantUsage,
-            TenantInvitation,
-          ],
+          autoLoadEntities: true,
+          logging:
+            configService.get('NODE_ENV') === 'development'
+              ? ['query', 'error', 'warn']
+              : ['error'],
+          maxQueryExecutionTime: 200,
         };
 
         if (dbType === 'sqlite') {
@@ -100,6 +78,10 @@ import { TenantInvitation } from './tenancy/entities/tenant-invitation.entity';
     WorkflowModule,
     QueueModule,
     MarketDataModule,
+    NotificationModule,
+    InsuranceModule,
+    DataArchivalModule,
+    DatabaseOptimizationModule,
     AuditModule,
     GdprModule,
     ThrottleModule,

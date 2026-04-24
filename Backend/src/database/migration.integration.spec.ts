@@ -3,40 +3,53 @@
  * Test suite for migration strategy and utilities
  */
 
-import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
-import { DatabaseModule } from './database.module';
 import {
   MigrationExecutor,
   MigrationTestingService,
   MigrationManagerService,
   EnhancedMigration,
-  MigrationContext,
   MigrationValidator,
 } from './index';
 
 describe('Database Migrations', () => {
-  let module: TestingModule;
   let dataSource: DataSource;
   let migrationManager: MigrationManagerService;
   let executor: MigrationExecutor;
   let tester: MigrationTestingService;
 
   beforeAll(async () => {
-    module = await Test.createTestingModule({
-      imports: [DatabaseModule],
-    }).compile();
+    dataSource = new DataSource({
+      type: 'sqlite',
+      database: ':memory:',
+      synchronize: false,
+      logging: false,
+    });
 
-    dataSource = module.get<DataSource>(DataSource);
-    migrationManager = module.get<MigrationManagerService>(
-      MigrationManagerService,
+    await dataSource.initialize();
+    await dataSource.query(
+      `CREATE TABLE workflows (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        state TEXT NOT NULL,
+        createdAt TEXT NOT NULL
+      )`,
     );
-    executor = module.get<MigrationExecutor>(MigrationExecutor);
-    tester = module.get<MigrationTestingService>(MigrationTestingService);
+    await dataSource.query(
+      `CREATE TABLE audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action_type TEXT NOT NULL
+      )`,
+    );
+
+    migrationManager = new MigrationManagerService(dataSource);
+    executor = new MigrationExecutor();
+    tester = new MigrationTestingService();
   });
 
   afterAll(async () => {
-    await module.close();
+    if (dataSource?.isInitialized) {
+      await dataSource.destroy();
+    }
   });
 
   describe('MigrationValidator', () => {
@@ -45,7 +58,7 @@ describe('Database Migrations', () => {
       try {
         const rule = MigrationValidator.commonRules.tableExists('workflows');
         const result = await rule.validate(queryRunner);
-        expect(typeof result).toBe('boolean');
+        expect(result).toBe(true);
       } finally {
         await queryRunner.release();
       }
@@ -59,7 +72,7 @@ describe('Database Migrations', () => {
           'id',
         );
         const result = await rule.validate(queryRunner);
-        expect(typeof result).toBe('boolean');
+        expect(result).toBe(true);
       } finally {
         await queryRunner.release();
       }
@@ -74,10 +87,10 @@ describe('Database Migrations', () => {
           name: 'TestMigration',
           version: '1.0.0',
           description: 'Test migration',
-          up: async (qr, context) => {
+          up: async (_qr, context) => {
             context.executedQueries.push('SELECT 1');
           },
-          down: async (qr, context) => {
+          down: async (_qr, context) => {
             context.executedQueries.push('ROLLBACK');
           },
         };
@@ -85,7 +98,7 @@ describe('Database Migrations', () => {
         const context = await executor.executeMigration(
           queryRunner,
           mockMigration,
-          true, // dry-run
+          true,
         );
 
         expect(context.status).toBe('completed');
@@ -115,8 +128,8 @@ describe('Database Migrations', () => {
           preValidationRules: [
             MigrationValidator.commonRules.tableExists('workflows'),
           ],
-          up: async (qr, context) => {},
-          down: async (qr, context) => {},
+          up: async () => {},
+          down: async () => {},
         };
 
         const result = await tester.testMigrationValidation(
@@ -125,9 +138,7 @@ describe('Database Migrations', () => {
         );
 
         expect(result.testType).toBe('validation');
-        expect(typeof result.passed).toBe('boolean');
-        expect(typeof result.message).toBe('string');
-        expect(result.duration).toBeGreaterThanOrEqual(0);
+        expect(result.passed).toBe(true);
       } finally {
         await queryRunner.release();
       }
@@ -139,10 +150,10 @@ describe('Database Migrations', () => {
         const mockMigration: EnhancedMigration = {
           name: 'TestMigration',
           version: '1.0.0',
-          up: async (qr, context) => {
+          up: async (_qr, context) => {
             context.executedQueries.push('SELECT 1');
           },
-          down: async (qr, context) => {},
+          down: async () => {},
         };
 
         const result = await tester.testMigrationDryRun(
@@ -151,8 +162,43 @@ describe('Database Migrations', () => {
         );
 
         expect(result.testType).toBe('dry-run');
-        expect(typeof result.passed).toBe('boolean');
-        expect(result.duration).toBeGreaterThanOrEqual(0);
+        expect(result.passed).toBe(true);
+      } finally {
+        await queryRunner.release();
+      }
+    });
+
+    it('should run the comprehensive migration suite', async () => {
+      const queryRunner = dataSource.createQueryRunner();
+      try {
+        const mockMigration: EnhancedMigration = {
+          name: 'ComprehensiveMigration',
+          version: '1.0.0',
+          backupStrategy: {
+            tables: ['workflows'],
+            strategy: 'snapshot',
+          },
+          preValidationRules: [
+            MigrationValidator.commonRules.tableExists('workflows'),
+          ],
+          up: async (_qr, context) => {
+            context.executedQueries.push('SELECT 1');
+          },
+          down: async (_qr, context) => {
+            context.executedQueries.push('ROLLBACK');
+          },
+          rollback: async (_qr, context) => {
+            context.executedQueries.push('ROLLBACK');
+          },
+        };
+
+        const results = await tester.runComprehensiveTest(
+          queryRunner,
+          mockMigration,
+        );
+
+        expect(results).toHaveLength(4);
+        expect(results.every((result) => result.passed)).toBe(true);
       } finally {
         await queryRunner.release();
       }
@@ -180,18 +226,17 @@ describe('Database Migrations', () => {
         const mockMigration: EnhancedMigration = {
           name: 'TestMigration',
           version: '1.0.0',
-          up: async (qr, context) => {
+          up: async (_qr, context) => {
             context.executedQueries.push('CREATE TABLE test (id INT)');
           },
-          down: async (qr, context) => {
+          down: async (_qr, context) => {
             context.executedQueries.push('DROP TABLE test');
           },
-          rollback: async (qr, context) => {
+          rollback: async (_qr, context) => {
             context.executedQueries.push('DROP TABLE test (rollback)');
           },
         };
 
-        // Rollback is supported if function is defined
         expect(typeof mockMigration.rollback).toBe('function');
       } finally {
         await queryRunner.release();
@@ -200,7 +245,7 @@ describe('Database Migrations', () => {
   });
 
   describe('Data Backup Strategy', () => {
-    it('should define backup strategy', async () => {
+    it('should define backup strategy', () => {
       const mockMigration: EnhancedMigration = {
         name: 'TestMigration',
         version: '1.0.0',
@@ -208,8 +253,8 @@ describe('Database Migrations', () => {
           tables: ['workflows'],
           strategy: 'full',
         },
-        up: async (qr, context) => {},
-        down: async (qr, context) => {},
+        up: async () => {},
+        down: async () => {},
       };
 
       expect(mockMigration.backupStrategy).toBeDefined();
