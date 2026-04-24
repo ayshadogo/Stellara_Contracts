@@ -1,11 +1,4 @@
-use soroban_sdk::{contracttype, Address, Env, Vec, Symbol, symbol_short};
-use crate::events::{
-    EventEmitter, ProposalCreatedEvent, ProposalApprovedEvent, ProposalRejectedEvent,
-    ProposalExecutedEvent, ProposalCancelledEvent,
-};
-
-const MIN_TIMELOCK_SECONDS: u64 = 3600;
-const MAX_TIMELOCK_SECONDS: u64 = 30 * 24 * 60 * 60;
+use soroban_sdk::{contracttype, symbol_short, Address, Env, Symbol, Vec};
 
 /// Upgrade proposal that must be approved via governance
 #[contracttype]
@@ -16,12 +9,12 @@ pub struct UpgradeProposal {
     pub new_contract_hash: Symbol,
     pub target_contract: Address,
     pub description: Symbol,
-    pub approval_threshold: u32,           // e.g., 2 of 3
+    pub approval_threshold: u32, // e.g., 2 of 3
     pub approvers: Vec<Address>,
     pub approvals_count: u32,
     pub status: ProposalStatus,
     pub created_at: u64,
-    pub execution_time: u64,               // Timelock: when it can be executed
+    pub execution_time: u64, // Timelock: when it can be executed
     pub executed: bool,
 }
 
@@ -42,9 +35,9 @@ pub enum ProposalStatus {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum GovernanceRole {
-    Admin = 0,        // Can propose upgrades and cancel
-    Approver = 1,     // Can approve/reject proposals
-    Executor = 2,     // Can execute approved proposals (after timelock)
+    Admin = 0,    // Can propose upgrades and cancel
+    Approver = 1, // Can approve/reject proposals
+    Executor = 2, // Can execute approved proposals (after timelock)
 }
 
 /// Governance error codes
@@ -59,8 +52,6 @@ pub enum GovernanceError {
     InvalidThreshold = 2006,
     DuplicateApproval = 2007,
     ProposalNotFound = 2008,
-    InvalidTimelock = 2009,
-    UpgradesPaused = 2010,
 }
 
 impl From<GovernanceError> for soroban_sdk::Error {
@@ -78,33 +69,6 @@ impl From<soroban_sdk::Error> for GovernanceError {
 pub struct GovernanceManager;
 
 impl GovernanceManager {
-    fn is_paused(env: &Env) -> bool {
-        let paused_key = symbol_short!("gpaused");
-        env.storage().persistent().get(&paused_key).unwrap_or(false)
-    }
-
-    fn require_not_paused(env: &Env) -> Result<(), GovernanceError> {
-        if Self::is_paused(env) {
-            Err(GovernanceError::UpgradesPaused)
-        } else {
-            Ok(())
-        }
-    }
-
-    pub fn pause_governance(env: &Env, admin: Address) -> Result<(), GovernanceError> {
-        Self::require_role(env, &admin, GovernanceRole::Admin);
-        let paused_key = symbol_short!("gpaused");
-        env.storage().persistent().set(&paused_key, &true);
-        Ok(())
-    }
-
-    pub fn resume_governance(env: &Env, admin: Address) -> Result<(), GovernanceError> {
-        Self::require_role(env, &admin, GovernanceRole::Admin);
-        let paused_key = symbol_short!("gpaused");
-        env.storage().persistent().set(&paused_key, &false);
-        Ok(())
-    }
-
     /// Validate that an address has a specific role
     pub fn require_role(env: &Env, address: &Address, required_role: GovernanceRole) {
         let roles_key = symbol_short!("roles");
@@ -114,8 +78,10 @@ impl GovernanceManager {
             .get(&roles_key)
             .unwrap_or_else(|| soroban_sdk::Map::new(env));
 
-        let user_role = role_map.get(address.clone()).unwrap_or(GovernanceRole::Executor);
-        
+        let user_role = role_map
+            .get(address.clone())
+            .unwrap_or(GovernanceRole::Executor);
+
         if user_role > required_role {
             panic!("UNAUTH");
         }
@@ -132,25 +98,12 @@ impl GovernanceManager {
         approvers: Vec<Address>,
         timelock_delay: u64,
     ) -> Result<u64, GovernanceError> {
-        Self::require_not_paused(env)?;
         // Validate proposer is admin
         Self::require_role(env, &proposer, GovernanceRole::Admin);
 
         // Validate threshold
         if approval_threshold == 0 || approval_threshold > approvers.len() as u32 {
             return Err(GovernanceError::InvalidThreshold);
-        }
-
-        if timelock_delay < MIN_TIMELOCK_SECONDS || timelock_delay > MAX_TIMELOCK_SECONDS {
-            return Err(GovernanceError::InvalidTimelock);
-        }
-
-        let mut unique_approvers = Vec::new(env);
-        for addr in approvers.iter() {
-            if unique_approvers.iter().any(|a| a == addr) {
-                return Err(GovernanceError::InvalidProposal);
-            }
-            unique_approvers.push_back(addr.clone());
         }
 
         // Get next proposal ID
@@ -162,12 +115,6 @@ impl GovernanceManager {
             .unwrap_or(0u64);
 
         let next_id = proposal_id + 1;
-
-        // Clone values for event emission before moving into proposal
-        let event_proposer = proposer.clone();
-        let event_new_contract_hash = new_contract_hash.clone();
-        let event_target_contract = target_contract.clone();
-        let event_description = description.clone();
 
         let proposal = UpgradeProposal {
             id: next_id,
@@ -200,18 +147,6 @@ impl GovernanceManager {
             .persistent()
             .set(&proposal_counter_key, &next_id);
 
-        // Emit proposal created event
-        EventEmitter::proposal_created(env, ProposalCreatedEvent {
-            proposal_id: next_id,
-            proposer: event_proposer,
-            new_contract_hash: event_new_contract_hash,
-            target_contract: event_target_contract,
-            description: event_description,
-            approval_threshold,
-            timelock_delay,
-            timestamp: env.ledger().timestamp(),
-        });
-
         Ok(next_id)
     }
 
@@ -221,7 +156,6 @@ impl GovernanceManager {
         proposal_id: u64,
         approver: Address,
     ) -> Result<(), GovernanceError> {
-        Self::require_not_paused(env)?;
         // Validate approver has permission
         Self::require_role(env, &approver, GovernanceRole::Approver);
 
@@ -259,7 +193,7 @@ impl GovernanceManager {
         }
 
         // Record approval
-        approvals.set((proposal_id, approver.clone()), true);
+        approvals.set((proposal_id, approver), true);
         env.storage().persistent().set(&approvals_key, &approvals);
 
         // Increment approval count
@@ -270,20 +204,8 @@ impl GovernanceManager {
             proposal.status = ProposalStatus::Approved;
         }
 
-        let current_approvals = proposal.approvals_count;
-        let threshold = proposal.approval_threshold;
-
         proposals.set(proposal_id, proposal);
         env.storage().persistent().set(&proposals_key, &proposals);
-
-        // Emit proposal approved event
-        EventEmitter::proposal_approved(env, ProposalApprovedEvent {
-            proposal_id,
-            approver,
-            current_approvals,
-            threshold,
-            timestamp: env.ledger().timestamp(),
-        });
 
         Ok(())
     }
@@ -294,7 +216,6 @@ impl GovernanceManager {
         proposal_id: u64,
         executor: Address,
     ) -> Result<(), GovernanceError> {
-        Self::require_not_paused(env)?;
         // Validate executor has permission
         Self::require_role(env, &executor, GovernanceRole::Executor);
 
@@ -323,18 +244,8 @@ impl GovernanceManager {
         proposal.executed = true;
         proposal.status = ProposalStatus::Executed;
 
-        let new_contract_hash = proposal.new_contract_hash.clone();
-
         proposals.set(proposal_id, proposal);
         env.storage().persistent().set(&proposals_key, &proposals);
-
-        // Emit proposal executed event
-        EventEmitter::proposal_executed(env, ProposalExecutedEvent {
-            proposal_id,
-            executor,
-            new_contract_hash,
-            timestamp: env.ledger().timestamp(),
-        });
 
         Ok(())
     }
@@ -366,13 +277,6 @@ impl GovernanceManager {
         proposals.set(proposal_id, proposal);
         env.storage().persistent().set(&proposals_key, &proposals);
 
-        // Emit proposal rejected event
-        EventEmitter::proposal_rejected(env, ProposalRejectedEvent {
-            proposal_id,
-            rejector,
-            timestamp: env.ledger().timestamp(),
-        });
-
         Ok(())
     }
 
@@ -403,21 +307,11 @@ impl GovernanceManager {
         proposals.set(proposal_id, proposal);
         env.storage().persistent().set(&proposals_key, &proposals);
 
-        // Emit proposal cancelled event
-        EventEmitter::proposal_cancelled(env, ProposalCancelledEvent {
-            proposal_id,
-            cancelled_by: admin,
-            timestamp: env.ledger().timestamp(),
-        });
-
         Ok(())
     }
 
     /// Get a proposal by ID
-    pub fn get_proposal(
-        env: &Env,
-        proposal_id: u64,
-    ) -> Result<UpgradeProposal, GovernanceError> {
+    pub fn get_proposal(env: &Env, proposal_id: u64) -> Result<UpgradeProposal, GovernanceError> {
         let proposals_key = symbol_short!("props");
         let proposals: soroban_sdk::Map<u64, UpgradeProposal> = env
             .storage()

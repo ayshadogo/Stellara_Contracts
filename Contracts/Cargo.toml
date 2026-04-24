@@ -1,22 +1,15 @@
 [workspace]
 members = [
-    "contracts/token",
     "contracts/trading",
     "contracts/social_rewards",
+    "contracts/messaging",
     "contracts/academy",
     "contracts/academy-rewards",
-    "contracts/privacy_token",
-    "contracts/privacy_trading",
-    # "contracts/staking",         # TODO: Fix compilation errors
-    # "contracts/yield_farming",   # TODO: Fix compilation errors
-    # "contracts/reward_distributor", # TODO: Fix compilation errors
-    # "contracts/governance_token",   # TODO: Fix compilation errors
+    "contracts/synthetic-assets",
+
+    "contracts/tcr",
+    "contracts/cross-chain-router",
+    "integration-tests",
     "shared",
 ]
 resolver = "2"
-
-[profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
-strip = true

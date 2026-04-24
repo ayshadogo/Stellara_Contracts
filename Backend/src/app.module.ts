@@ -1,111 +1,86 @@
-import { Module, Logger } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
-
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { validateEnv } from './config/env.validation';
 
-// logging and error handling
-import { LoggingModule } from './logging/logging.module';
-import { StructuredLogger } from './logging/structured-logger.service';
+// Core & Infrastructure Modules
+import { ReputationModule } from './reputation/reputation.module';
+import { DatabaseModule } from './database.module';
+import { HealthModule } from './health/health.module';
+import { IndexerModule } from './indexer/indexer.module';
+import { NotificationModule } from './notification/notification.module';
+import { StorageModule } from './storage/storage.module';
+import { AppCacheModule } from './cache/cache.module';
+import { PrismaModule } from './prisma.module';
+// Feature Modules
+import { InsuranceModule } from '../insurance/insurance.module';
+import { RegenerativeFinanceModule } from './regenerative-finance/regenerative-finance.module';
+import { CompetitionModule } from './competition/competition.module';
+import { SupportModule } from './support/support.module';
+import { MultisigModule } from './multisig/multisig.module';
+import { NonceModule } from './nonce/nonce.module';
+import { V1Module } from './modules/v1/v1.module';
+import { V2Module } from './modules/v2/v2.module';
 
-import { RedisModule } from './redis/redis.module';
-import { VoiceModule } from './voice/voice.module';
-// DatabaseModule removed - using PostgreSQL config in this module instead
-import { StellarMonitorModule } from './stellar-monitor/stellar-monitor.module';
-import { WorkflowModule } from './workflow/workflow.module';
-import { QueueModule } from './queue/queue.module';
-import { AuthModule } from './auth/auth.module';
-import { MarketDataModule } from './market-data/market-data.module';
-import { NotificationModule } from './notifications/notification.module';
-import { InsuranceModule } from './insurance/insurance.module';
-import { DataArchivalModule } from './data-archival/data-archival.module';
-import { DatabaseOptimizationModule } from './database-optimization/database-optimization.module';
-
-import { RolesGuard } from './guards/roles.guard';
-
-import { AuditModule } from './audit/audit.module';
-import { GdprModule } from './gdpr/gdpr.module';
-import { ThrottleModule } from './throttle/throttle.module';
-import { TenantModule } from './tenancy/tenant.module';
+// Middleware & Common
+import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+import { LoggingMiddleware } from './common/middleware/logging.middleware';
+import { ApiVersionMiddleware } from './common/middleware/api-version.middleware';
+import { TimeoutMiddleware } from './common/middleware/timeout.middleware';
+import { SanitizationMiddleware } from './common/middleware/sanitization.middleware';
+import { AppLogger } from './common/logger/app.logger';
 
 
 @Module({
   imports: [
-    // logging comes first so correlation middleware wraps every request
-    LoggingModule,
-
+    ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: '.env',
+      validate: validateEnv,
     }),
-
-    TypeOrmModule.forRootAsync({
+    ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => {
-        const dbType = configService.get('DB_TYPE') || 'sqlite';
-        
-        const baseConfig: any = {
-          type: dbType,
-          synchronize: configService.get('NODE_ENV') === 'development',
-          autoLoadEntities: true,
-          logging:
-            configService.get('NODE_ENV') === 'development'
-              ? ['query', 'error', 'warn']
-              : ['error'],
-          maxQueryExecutionTime: 200,
-        };
-
-        if (dbType === 'sqlite') {
-          baseConfig.database = configService.get('DB_DATABASE') || './stellar-events.db';
-        } else {
-          baseConfig.host = configService.get('DB_HOST') || 'localhost';
-          baseConfig.port = configService.get('DB_PORT') || 5432;
-          baseConfig.username = configService.get('DB_USERNAME') || 'postgres';
-          baseConfig.password = configService.get('DB_PASSWORD') || 'password';
-          baseConfig.database = configService.get('DB_DATABASE') || 'stellara_workflows';
-        }
-
-        return baseConfig;
-      },
+      useFactory: (config: ConfigService) => ({
+        throttlers: [
+          {
+            ttl: 60000,
+            limit: 100,
+          },
+        ],
+      }),
     }),
-
-    RedisModule,
-    AuthModule,
-    VoiceModule,
-    StellarMonitorModule,
-    WorkflowModule,
-    QueueModule,
-    MarketDataModule,
+    PrismaModule,
+    ReputationModule,
+    DatabaseModule,
+    HealthModule,
+    IndexerModule,
     NotificationModule,
+    StorageModule,
     InsuranceModule,
-    DataArchivalModule,
-    DatabaseOptimizationModule,
-    AuditModule,
-    GdprModule,
-    ThrottleModule,
-    TenantModule,
+    RegenerativeFinanceModule,
+    CompetitionModule,
+    SupportModule,
+    MultisigModule,
+    AppCacheModule,
   ],
-
   controllers: [AppController],
-
-  providers: [
-    AppService,
-
-    /**
-     * Global RBAC enforcement
-     * Applies @Roles() checks across all controllers
-     */
-    {
-      provide: APP_GUARD,
-      useClass: RolesGuard,
-    },
-    // replace the default Nest logger with our structured implementation
-    {
-      provide: Logger,
-      useClass: StructuredLogger,
-    },
-  ],
+  providers: [AppService, AppLogger, ApiVersionMiddleware, TimeoutMiddleware],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(
+        CorrelationIdMiddleware,
+        LoggingMiddleware,
+        ApiVersionMiddleware,
+        TimeoutMiddleware,
+        SanitizationMiddleware,
+      )
+      .forRoutes('*');
+  }
+}

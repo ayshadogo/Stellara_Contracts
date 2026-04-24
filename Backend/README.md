@@ -29,6 +29,18 @@ Provides market insights & educational guidance (not financial advice)
 * Prometheus metrics exposed at `/metrics` including error rate counters
 * Critical errors automatically escalate to alerts
 
+🎯 **Advanced Caching Layer**
+* Distributed caching with Redis Cluster support (3 master + 3 replica nodes)
+* Cache-aside, write-through, and write-behind patterns implementation
+* Cache invalidation strategies: key-based, tag-based, pattern-based, and rule-based
+* Cross-instance cache coherency using Redis Pub/Sub for broadcasting invalidations
+* Cache warming mechanisms: priority-based, scheduled (hourly/daily/weekly), and distributed warmup
+* Cache consistency: version tracking, conflict detection, and Last-Write-Wins resolution
+* Comprehensive monitoring: hit/miss rates, memory usage, evictions, and performance metrics
+* Health checks and alerting for cache performance degradation
+* Sharding strategies: consistent hashing (160 virtual nodes) and CRC16 slot mapping
+* REST API endpoints for cache management and monitoring
+
 🎓 Crypto Academy
 Structured learning paths (Beginner → Pro)
 Stellar & Soroban smart contract education
@@ -53,7 +65,7 @@ Market trend summaries via AI
 Backend
 NestJS – API framework
 PostgreSQL – Relational database
-Redis – Caching & real-time messaging
+Redis – Distributed caching with cluster support, real-time messaging
 WebSocket Gateway – Real-time chat & feed
 Blockchain
 Stellar SDK & Horizon API
@@ -125,40 +137,68 @@ This project uses **HashiCorp Vault** for secure secrets management. Secrets are
 
 ▶ Run Development Server npm run start:dev
 
+🎯 **Cache Management Endpoints**
+* GET `/cache/entry/:key` - Retrieve cache entry
+* POST `/cache/entry` - Set cache entry
+* DELETE `/cache/entry/:key` - Delete cache entry
+* DELETE `/cache/tag/:tag` - Delete cache entries by tag
+* DELETE `/cache/clear` - Clear all cache entries
+* POST `/cache/invalidate/key/:key` - Invalidate specific cache key
+* POST `/cache/invalidate/tag/:tag` - Invalidate cache entries by tag
+* POST `/cache/invalidate/pattern/:pattern` - Invalidate cache entries by pattern
+* POST `/cache/warmup/group/:name/execute` - Execute warmup group
+* GET `/cache/stats` - Get cache statistics
+* GET `/cache/health` - Get cache health status
+* GET `/cache/alerts` - Get cache alerts
+* POST `/cache/alerts/:id/resolve` - Resolve cache alert
+* GET `/cache/report` - Generate cache performance report
+
 🧪 Testing npm run test npm run test:e2e
+
+📌 API versioning docs: see `./docs/api-versioning.md`
+⏱️ Timeout configuration: see `./docs/timeout-configuration.md`
 
 🤝 Contributing The first step is to Fork the repository then you Create a feature branch Commit your changes git pull latest changes to avoid conflicts Submit a pull request Issues and feature requests are welcome.
 
 🗄️ Database & Migrations Workflow
 
-Para garantizar la integridad de los datos y la consistencia entre entornos, este proyecto utiliza **TypeORM Migrations** y **Docker**.
+Para garantizar la integridad de los datos y la consistencia entre entornos, este proyecto utiliza **Prisma Migrations** y **Docker**.
 
 1. Infraestructura Local
 Levanta la base de datos PostgreSQL utilizando el contenedor preconfigurado:
 bash
 docker-compose up -d
 
-Nota: La base de datos está mapeada al puerto 5433 para evitar conflictos con instalaciones locales preexistentes.
+Nota: La base de datos está mapeada al puerto 5432 para evitar conflictos con instalaciones locales preexistentes.
 
 2. Comandos de Migración
-Utiliza estos scripts para gestionar el esquema de la base de datos sin usar synchronize: true:
+Utiliza estos scripts para gestionar el esquema de la base de datos:
 
-Generar Migración: (Ejecutar después de modificar una entidad .entity.ts)
+Generar y Aplicar Migración: (Después de modificar schema.prisma)
+bash
+npm run db:migrate
 
-Bash
-npm run migration:generate -- src/database/migrations/NombreDeLaMigracion
-Aplicar Migraciones: (Sincroniza tu base de datos local con los últimos cambios)
+Generar Migración con Nombre Específico:
+bash
+npx prisma migrate dev --name NombreDeLaMigracion
 
-Bash
-npm run migration:run
+Aplicar Migraciones en Producción:
+bash
+npm run db:migrate:deploy
+
 Revertir Cambios: (Deshace la última migración aplicada)
+bash
+npx prisma migrate resolve --rolled-back
 
-Bash
-npm run migration:revert
+Studio para Visualizar la Base de Datos:
+bash
+npm run db:studio
 
-3. Buenas Prácticas 
+3. Buenas Prácticas
 Nunca modifiques manualmente las tablas en la base de datos; usa siempre archivos de migración.
 
-Revisa el archivo generado en src/database/migrations/ antes de hacer commit para asegurar que el SQL es el esperado.
+Revisa los archivos generados en prisma/migrations/ antes de hacer commit para asegurar que el SQL es el esperado.
 
-Asegúrate de que tu archivo .env apunte al puerto 5433 si usas el entorno Docker provisto.
+Asegúrate de que tu archivo .env apunte al puerto 5432 si usas el entorno Docker provisto.
+
+Para desarrollo local, usa `prisma db push` para sincronización rápida (no genera archivos de migración). Para producción, siempre usa migraciones.

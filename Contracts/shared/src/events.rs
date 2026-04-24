@@ -31,6 +31,15 @@ pub mod topics {
     pub const REWARD_ADDED: Symbol = symbol_short!("reward");
     pub const REWARD_CLAIMED: Symbol = symbol_short!("claimed");
 
+    // Parametric insurance events
+    pub const POLICY_CREATED: Symbol = symbol_short!("pol_create");
+    pub const POLICY_CANCELLED: Symbol = symbol_short!("pol_cancel");
+    pub const POLICY_EXPIRED: Symbol = symbol_short!("pol_expire");
+    pub const TRIGGER_ACTIVATED: Symbol = symbol_short!("trig_act");
+    pub const CLAIM_PAID: Symbol = symbol_short!("claim_paid");
+    pub const LIQUIDITY_DEPOSITED: Symbol = symbol_short!("liq_dep");
+    pub const LIQUIDITY_WITHDRAWN: Symbol = symbol_short!("liq_wdraw");
+
     // Token events (for reference - already implemented in token contract)
     pub const TRANSFER: Symbol = symbol_short!("transfer");
     pub const MINT: Symbol = symbol_short!("mint");
@@ -220,6 +229,108 @@ pub struct RewardClaimedEvent {
 }
 
 // =============================================================================
+// Parametric Insurance Events
+// =============================================================================
+
+/// Emitted when a new parametric insurance policy is created
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PolicyCreatedEvent {
+    /// Unique policy identifier
+    pub policy_id: u64,
+    /// Address of the insured party
+    pub policyholder: Address,
+    /// Payout amount if the trigger fires
+    pub coverage_amount: i128,
+    /// Premium paid upfront
+    pub premium_amount: i128,
+    /// Unix timestamp when the coverage window expires
+    pub end_time: u64,
+    /// Block timestamp when the policy was created
+    pub timestamp: u64,
+}
+
+/// Emitted when a policyholder cancels their active policy
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PolicyCancelledEvent {
+    /// Policy identifier
+    pub policy_id: u64,
+    /// Policyholder who cancelled
+    pub policyholder: Address,
+    /// Block timestamp
+    pub timestamp: u64,
+}
+
+/// Emitted when a policy's coverage window lapses without a trigger
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PolicyExpiredEvent {
+    /// Policy identifier
+    pub policy_id: u64,
+    /// Policyholder whose coverage expired
+    pub policyholder: Address,
+    /// Block timestamp
+    pub timestamp: u64,
+}
+
+/// Emitted when an oracle condition is met and a payout is initiated
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct TriggerActivatedEvent {
+    /// Policy identifier
+    pub policy_id: u64,
+    /// Policyholder receiving the payout
+    pub policyholder: Address,
+    /// Oracle value that caused the trigger
+    pub oracle_value: i128,
+    /// The predefined threshold
+    pub trigger_threshold: i128,
+    /// Coverage amount being paid out
+    pub coverage_amount: i128,
+    /// Block timestamp
+    pub timestamp: u64,
+}
+
+/// Emitted when a payout is transferred to the policyholder
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ClaimPaidEvent {
+    /// Policy identifier
+    pub policy_id: u64,
+    /// Recipient of the payout
+    pub policyholder: Address,
+    /// Amount transferred
+    pub amount: i128,
+    /// Block timestamp
+    pub timestamp: u64,
+}
+
+/// Emitted when a liquidity provider deposits into the risk pool
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct LiquidityDepositedEvent {
+    /// Address that deposited
+    pub provider: Address,
+    /// Amount deposited
+    pub amount: i128,
+    /// Block timestamp
+    pub timestamp: u64,
+}
+
+/// Emitted when a liquidity provider withdraws from the risk pool
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct LiquidityWithdrawnEvent {
+    /// Address that withdrew
+    pub provider: Address,
+    /// Amount withdrawn
+    pub amount: i128,
+    /// Block timestamp
+    pub timestamp: u64,
+}
+
+// =============================================================================
 // Event Emission Helpers
 // =============================================================================
 
@@ -282,5 +393,42 @@ impl EventEmitter {
     /// Emit a reward claimed event
     pub fn reward_claimed(env: &Env, event: RewardClaimedEvent) {
         env.events().publish((topics::REWARD_CLAIMED,), event);
+    }
+
+    // ── Parametric insurance emitters ─────────────────────────────────────────
+
+    /// Emit a policy created event
+    pub fn policy_created(env: &Env, event: PolicyCreatedEvent) {
+        env.events().publish((topics::POLICY_CREATED,), event);
+    }
+
+    /// Emit a policy cancelled event
+    pub fn policy_cancelled(env: &Env, event: PolicyCancelledEvent) {
+        env.events().publish((topics::POLICY_CANCELLED,), event);
+    }
+
+    /// Emit a policy expired event
+    pub fn policy_expired(env: &Env, event: PolicyExpiredEvent) {
+        env.events().publish((topics::POLICY_EXPIRED,), event);
+    }
+
+    /// Emit a trigger activated event
+    pub fn trigger_activated(env: &Env, event: TriggerActivatedEvent) {
+        env.events().publish((topics::TRIGGER_ACTIVATED,), event);
+    }
+
+    /// Emit a claim paid event
+    pub fn claim_paid(env: &Env, event: ClaimPaidEvent) {
+        env.events().publish((topics::CLAIM_PAID,), event);
+    }
+
+    /// Emit a liquidity deposited event
+    pub fn liquidity_deposited(env: &Env, event: LiquidityDepositedEvent) {
+        env.events().publish((topics::LIQUIDITY_DEPOSITED,), event);
+    }
+
+    /// Emit a liquidity withdrawn event
+    pub fn liquidity_withdrawn(env: &Env, event: LiquidityWithdrawnEvent) {
+        env.events().publish((topics::LIQUIDITY_WITHDRAWN,), event);
     }
 }

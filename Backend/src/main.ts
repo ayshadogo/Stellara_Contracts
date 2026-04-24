@@ -1,32 +1,19 @@
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
-import { RedisIoAdapter } from './websocket/redis-io.adapter';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
-import { ThrottleGuard } from './throttle/throttle.guard';
-import { StructuredLogger } from './logging/structured-logger.service';
-import { AllExceptionsFilter } from './logging/all-exceptions.filter';
-import { MetricsService } from './logging/metrics.service';
-import { ErrorTrackingService } from './logging/error-tracking.service';
+import { ConfigService } from '@nestjs/config';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import * as yaml from 'js-yaml';
+import { AppModule } from './app.module';
+import { PrismaService } from './prisma.service';
+import { AppLogger } from './common/logger/app.logger';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  // swap out Nest's default logger with our structured implementation
-  const logger = app.get(StructuredLogger);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const logger = app.get(AppLogger);
   app.useLogger(logger);
+  const configService = app.get(ConfigService);
 
-  // monkey‑patch Nest's Logger prototype so `new Logger()` instances
-  // also use the structured logger logic and include correlation IDs.
-  const nestProto: any = (require('@nestjs/common').Logger as any).prototype;
-  ['log', 'error', 'warn', 'debug', 'verbose'].forEach(method => {
-    const orig = nestProto[method];
-    nestProto[method] = function (message: any, ...args: any[]) {
-      // delegate to our global structured logger
-      (logger as any)[method](message, ...args);
-    };
-  });
-
-  // Enable validation globally
+  // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -35,39 +22,61 @@ async function bootstrap() {
     }),
   );
 
-  // Configure Swagger
-  const config = new DocumentBuilder()
-    .setTitle('Stellara API')
-    .setDescription('API for authentication, monitoring Stellar network events, and delivering webhooks')
-    .setVersion('1.0')
-    .addTag('Authentication')
-    .addTag('Stellar Monitor')
-    .addBearerAuth()
+  // API prefix and version normalization
+  const rawPrefix = configService.get<string>('API_PREFIX', 'api');
+  const apiPrefix = rawPrefix.replace(/\/?v[0-9]+$/, '').replace(/^\/|\/$/g, '') || 'api';
+  app.setGlobalPrefix(apiPrefix);
+
+  // OpenAPI / Swagger
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('Stellara Backend API')
+    .setDescription('REST API documentation for Stellara backend services')
+    .setVersion('1.0.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'Provide JWT access token',
+      },
+      'bearer',
+    )
     .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
 
-  const redisIoAdapter = new RedisIoAdapter(app);
-  await redisIoAdapter.connectToRedis();
-
-  app.useWebSocketAdapter(redisIoAdapter);
-  app.useGlobalGuards(app.get(ThrottleGuard));
-
-  // register an exception filter so all uncaught errors are handled centrally
-  const errorTracker = app.get(ErrorTrackingService);
-  const metricsService = app.get(MetricsService);
-  const globalFilter = new AllExceptionsFilter(errorTracker, metricsService);
-  app.useGlobalFilters(globalFilter);
-
-  // expose Prometheus metrics on a simple endpoint via the underlying
-  // Express application rather than the Nest `get` which is meant for
-  // resolving providers.  The previous call resulted in a type error.
-  const expressApp: any = app.getHttpAdapter().getInstance();
-  expressApp.get('/metrics', async (_req, res) => {
-    res.set('Content-Type', 'text/plain');
-    res.send(await metricsService.getMetrics());
+  const document = SwaggerModule.createDocument(app, swaggerConfig, {
+    deepScanRoutes: true,
   });
 
-  await app.listen(process.env.PORT ?? 3000);
+  SwaggerModule.setup('api/docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+    jsonDocumentUrl: '/api/docs-json',
+  });
+
+  const httpServer = app.getHttpAdapter().getInstance();
+  httpServer.get('/api/docs-yaml', (_req, res) => {
+    res.type('application/x-yaml');
+    res.send(yaml.dump(document));
+  });
+
+  // CORS
+  app.enableCors();
+
+  // Database connection validation
+  const prismaService = app.get(PrismaService);
+  try {
+    await prismaService.$connect();
+    console.log('Database connection established successfully');
+  } catch (error) {
+    console.error('Failed to connect to database:', error.message);
+    process.exit(1);
+  }
+
+  const port = configService.get<number>('PORT', 3000);
+  await app.listen(port);
+
+  console.log(`Application is running on: http://localhost:${port}/${apiPrefix}`);
 }
+
 bootstrap();
