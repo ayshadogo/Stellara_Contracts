@@ -1483,3 +1483,41 @@ enum ResolutionType {
   AUTOMATED_CORRECTION
   REJECTED
 }
+
+// Dead Letter Queue (#682)
+enum DlqStatus {
+  PENDING
+  FAILED
+  RESOLVED
+}
+
+model DeadLetterQueue {
+  id         String    @id @default(cuid())
+  eventType  String    @map("event_type")
+  payload    Json
+  source     String
+  lastError  String    @map("last_error")
+  attempts   Int       @default(0)
+  status     DlqStatus @default(PENDING)
+  resolvedAt DateTime? @map("resolved_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("dead_letter_queue")
+}
+
+// Idempotency Keys (#683)
+model IdempotencyKey {
+  id         String   @id @default(cuid())
+  key        String   @unique
+  statusCode Int      @map("status_code")
+  response   Json
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
