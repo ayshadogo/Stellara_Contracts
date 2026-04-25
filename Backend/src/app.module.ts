@@ -34,6 +34,7 @@ import { BulkModule } from './bulk/bulk.module';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { StellaraGraphQLModule } from './graphql/graphql.module';
 import { AuthModule } from './auth/auth.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 // Middleware & Common
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
@@ -87,6 +88,7 @@ import { AppLogger } from './common/logger/app.logger';
     FeatureFlagsModule,
     StellaraGraphQLModule,
     MfaModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [AppService, AppLogger, ApiVersionMiddleware, TimeoutMiddleware],
